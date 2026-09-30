@@ -1,0 +1,33 @@
+{
+  "schema_version": "2.0",
+  "ruleset_release": "2026.09.1",
+  "regulatory_rules": [
+    {
+      "rule_id": "EU-ANNEX-II-001",
+      "target_class": "Ortho-Phthalate Ester",
+      "smarts": "O=C(c1ccccc1C(=O)O[#6])O[#6]",
+      "authority": "European Commission",
+      "legal_instrument": "Regulation (EC) No 1223/2009 Annex II",
+      "status": "Prohibited",
+      "effective_date": "2009-11-30"
+    },
+    {
+      "rule_id": "RETAIL-SEPHORA-012",
+      "target_class": "Formaldehyde Releaser",
+      "smarts": "OCC(Br)([$([N+](=O)[O-]),$(N(=O)=O)])CO",
+      "authority": "Sephora Inc.",
+      "legal_instrument": "Clean at Sephora Public Standard",
+      "status": "Prohibited",
+      "effective_date": "2024-01-01"
+    },
+    {
+      "rule_id": "EU-ALLERGEN-1545-004",
+      "target_class": "Linalool / Terpene Core",
+      "smarts": "CC(=CCCC(C)(C=C)O)C",
+      "authority": "European Commission",
+      "legal_instrument": "Regulation (EU) 2023/1545",
+      "status": "Restricted (Declaration Required)",
+      "effective_date": "2023-07-26"
+    }
+  ]
+}
