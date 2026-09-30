@@ -1,6 +1,6 @@
 {
-  "schema_version": "2.0",
-  "ruleset_release": "2026.09.1",
+  "schema_version": "2.1",
+  "ruleset_release": "2026.09.2",
   "regulatory_rules": [
     {
       "rule_id": "EU-ANNEX-II-001",
