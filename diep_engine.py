@@ -29,8 +29,8 @@ def standardize_api(smiles: str) -> Tuple[float, float, Chem.Mol]:
     clean_mol = rdMolStandardize.LargestFragmentChooser().choose(mol)
     return Descriptors.MolWt(clean_mol), Descriptors.MolLogP(clean_mol), clean_mol
 
-def evaluate_cramer_class(mol: Chem.Mol, has_alerts: bool) -> str:
-    if has_alerts: return "Cramer_III"
+def evaluate_cramer_class(mol: Chem.Mol) -> str:
+    """Dynamically assigns Cramer Class based on topological complexity."""
     mw = Descriptors.MolWt(mol)
     rings = Descriptors.NumAromaticRings(mol)
     heteroatoms = Descriptors.NumHeteroatoms(mol)
@@ -63,10 +63,8 @@ def calculate_dual_pathway_flux(mw: float, logp: float, ph: float, pka: float, i
 def run_diep_gatekeeper(smiles: str, conc_pct: float, ph: float, pka: float, is_base: bool, product_type: str) -> Dict:
     mw, logp, clean_mol = standardize_api(smiles)
     
-    has_alert = False
     for alert, smarts in TOXICOPHORES.items():
         if clean_mol.HasSubstructMatch(Chem.MolFromSmarts(smarts)):
-            has_alert = True
             raise ToxicophoreMatchException(f"Critical Systemic Hazard: {alert} detected.")
             
     if product_type not in SCCS_MECHANISTIC_REGISTRY:
@@ -82,7 +80,7 @@ def run_diep_gatekeeper(smiles: str, conc_pct: float, ph: float, pka: float, is_
     da_pct = (absorbed_mass_mg / total_api_applied_mg * 100.0) if total_api_applied_mg > 0 else 0.0
     sed_ug_day = absorbed_mass_mg * 1000.0
     
-    cramer_class = evaluate_cramer_class(clean_mol, has_alert)
+    cramer_class = evaluate_cramer_class(clean_mol)
     ttc_limit = EFSA_TTC_SYSTEMIC_UG_DAY[cramer_class]
     hepatic_burden = sed_ug_day / ttc_limit if ttc_limit > 0 else float('inf')
     f_ui = 1 / (1 + 10**(pka - ph)) if is_base else 1 / (1 + 10**(ph - pka))
