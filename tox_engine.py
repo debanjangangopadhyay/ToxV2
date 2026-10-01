@@ -16,7 +16,7 @@ from rdkit.Chem.MolStandardize import rdMolStandardize
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Table
+from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Table
 from reportlab.pdfgen import canvas
 
 class ValidationError(ValueError): pass
@@ -39,7 +39,7 @@ class AnalysisInputContract:
     pod_type: str = "NOAEL"
     species: str = "Rat"
     duration: str = "Subchronic"
-    dermal_absorption_pct: float = 50.0  # Acts as the Fickian Max
+    dermal_absorption_pct: float = 50.0  
     body_weight_kg: float = 60.0
     mc_samples: int = 10000
     random_seed: int = 42
@@ -94,13 +94,13 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
         
     target_af = af_inter * af_intra * af_duration * af_pod
 
-    # Right-Tail Truncation: Prevent Monte Carlo from violating Fickian mass limits
-    da_max = contract.dermal_absorption_pct / 100.0
+    # Prevents NumPy array-crash if diep_engine returns 0.0 DA%
+    da_max = max(contract.dermal_absorption_pct / 100.0, 0.0001)
     da_mean = da_max * 0.70  
     cv_da = 0.30 
     
     bw = rng.normal(contract.body_weight_kg, 10.2, n).clip(40.0, 120.0)
-    da = rng.normal(da_mean, da_mean * cv_da, n).clip(0.0001, da_max)
+    da = rng.normal(da_mean, da_mean * cv_da, n).clip(0.00001, da_max)
     applied_g = rng.normal(scenario["daily_amount_g"], scenario["sigma_g"], n).clip(0.01, None)
     applied_mg = applied_g * 1000.0 * scenario["retention_factor"]
     pod_dist = rng.normal(contract.pod_noael_mg_kg_day, contract.pod_noael_mg_kg_day * 0.1, n).clip(0.001, None)
@@ -161,10 +161,48 @@ def execute_full_compound_audit(smiles: str, product_type: str, concentration_pc
         "reg": {}, "alerts": alerts, "met": [], "mos": mos, "analogs": []
     }
 
+class NumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.saveState()
+            self.setFont("Helvetica", 8)
+            self.setFillColor(colors.HexColor("#718096"))
+            self.drawString(36, 20, "Research-Use Computational Assessment | Non-Standalone Dossier")
+            self.drawRightString(576, 20, f"Page {self._pageNumber} of {num_pages}")
+            self.restoreState()
+            super().showPage()
+        super().save()
+
 def generate_enterprise_pdf(audit_data: Dict[str, Any]) -> BytesIO:
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
-    doc.build([Paragraph("COMPUTATIONAL TOXICOLOGY DOSSIER", ParagraphStyle("T", fontName="Helvetica-Bold", fontSize=16))])
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle("H1", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=11, textColor=colors.HexColor("#1B365D"), spaceBefore=8, spaceAfter=4)
+    cell_bold = ParagraphStyle("CB", parent=styles["Normal"], fontSize=8, fontName="Helvetica-Bold", leading=10)
+    cell_norm = ParagraphStyle("CN", parent=styles["Normal"], fontSize=8, leading=10)
+    
+    story = [
+        Paragraph("COMPUTATIONAL TOXICOLOGY & ELEVATED EVIDENCE DOSSIER", ParagraphStyle("T", fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=colors.HexColor("#1B365D"))),
+        HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#1B365D"), spaceAfter=8),
+    ]
+    
+    if audit_data.get("valid"):
+        story.append(Paragraph("1. Stochastic Scenario Margin of Safety (Monte Carlo Analysis)", h1))
+        story.append(Table([
+            [Paragraph("Median SED (mg/kg/d)", cell_bold), Paragraph("Median MoS", cell_bold), Paragraph("5th Percentile MoS", cell_bold), Paragraph("Failure Probability", cell_bold)],
+            [Paragraph(str(audit_data["mos"]["median_sed_mg_kg_day"]), cell_norm), Paragraph(str(audit_data["mos"]["median_mos"]), cell_norm), Paragraph(str(audit_data["mos"]["ci_05_mos"]), cell_norm), Paragraph(f"{audit_data['mos']['failure_probability']*100:.2f}%", cell_norm)]
+        ], colWidths=[135, 135, 135, 135], style=[('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E0')), ('PADDING', (0,0), (-1,-1), 4)]))
+        
+    doc.build(story, canvasmaker=NumberedCanvas)
     buffer.seek(0)
     return buffer
-    
+                                
