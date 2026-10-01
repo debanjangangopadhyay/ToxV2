@@ -35,6 +35,9 @@ class AnalysisInputContract:
     product_type: str
     concentration_pct: float
     pod_noael_mg_kg_day: float
+    pod_type: str = "NOAEL"
+    species: str = "Rat"
+    duration: str = "Subchronic"
     dermal_absorption_pct: float = 50.0
     body_weight_kg: float = 60.0
     mc_samples: int = 10000
@@ -84,16 +87,24 @@ def simulate_skin_metabolism(parent_mol: Chem.Mol) -> List[Dict[str, Any]]:
     return []
 
 def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) -> Dict[str, Any]:
-    """Integrated engine applying Dynamic Assessment Factors (AF) to Monte Carlo Simulation"""
     rng = np.random.default_rng(contract.random_seed)
     scenario = SCCS_PRODUCT_EXPOSURE[contract.product_type]
     n = contract.mc_samples
 
-    # Integrated from exposure_engine (1).py
-    af_inter = 10.0   # Animal to Human Extrapolation
-    af_intra = 10.0   # Intraspecies Variance
-    af_duration = 3.0 # Subchronic default
-    af_pod = 1.0      # NOAEL confidence
+    # Dynamic Assessment Factor (AF) Integration
+    af_inter = 1.0 if contract.species.lower() == "human" else 10.0
+    af_intra = 10.0 
+    
+    duration_lower = contract.duration.lower()
+    if duration_lower == "chronic": af_duration = 1.0
+    elif duration_lower == "subchronic": af_duration = 3.0
+    else: af_duration = 10.0
+        
+    pod_lower = contract.pod_type.lower()
+    if pod_lower == "loael": af_pod = 3.0
+    elif "bmdl" in pod_lower: af_pod = 1.0
+    else: af_pod = 1.0
+        
     target_af = af_inter * af_intra * af_duration * af_pod
 
     cv_da = max(0.15, 0.40 - (0.05 * abs(logp - 2.5)))
@@ -123,9 +134,9 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
 def execute_similarity_read_across(target_mol: Chem.Mol) -> List[Dict[str, Any]]:
     return []
 
-def execute_full_compound_audit(smiles: str, product_type: str, concentration_pct: float, pod_noael_mg_kg_day: float, dermal_absorption_pct: float = 50.0, body_weight_kg: float = 60.0, mc_samples: int = 10000, random_seed: int = 42) -> Dict[str, Any]:
+def execute_full_compound_audit(smiles: str, product_type: str, concentration_pct: float, pod_noael_mg_kg_day: float, pod_type: str = "NOAEL", species: str = "Rat", duration: str = "Subchronic", dermal_absorption_pct: float = 50.0, body_weight_kg: float = 60.0, mc_samples: int = 10000, random_seed: int = 42) -> Dict[str, Any]:
     try:
-        contract = AnalysisInputContract(smiles, product_type, concentration_pct, pod_noael_mg_kg_day, dermal_absorption_pct, body_weight_kg, mc_samples, random_seed)
+        contract = AnalysisInputContract(smiles, product_type, concentration_pct, pod_noael_mg_kg_day, pod_type, species, duration, dermal_absorption_pct, body_weight_kg, mc_samples, random_seed)
     except ValidationError as e:
         return {"valid": False, "error": str(e)}
 
@@ -146,7 +157,7 @@ def execute_full_compound_audit(smiles: str, product_type: str, concentration_pc
     
     return {
         "valid": True,
-        "assessment_id": f"IATA-V4-{hashlib.sha256(canonical_smiles.encode()).hexdigest()[:10].upper()}",
+        "assessment_id": f"IATA-V5-{hashlib.sha256(canonical_smiles.encode()).hexdigest()[:10].upper()}",
         "mol": mol,
         "canonical_smiles": canonical_smiles,
         "contract": contract,
