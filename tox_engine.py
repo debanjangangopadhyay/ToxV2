@@ -9,13 +9,14 @@ from typing import Dict, List, Any
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem, DataStructs, Draw, Descriptors, rdFingerprintGenerator
+from rdkit.Chem import Descriptors
 from rdkit.Chem.FilterCatalog import FilterCatalog, FilterCatalogParams
+from rdkit.Chem.MolStandardize import rdMolStandardize
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, Image as PlatypusImage
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Table
 from reportlab.pdfgen import canvas
 
 class ValidationError(ValueError): pass
@@ -38,16 +39,10 @@ class AnalysisInputContract:
     pod_type: str = "NOAEL"
     species: str = "Rat"
     duration: str = "Subchronic"
-    dermal_absorption_pct: float = 50.0
+    dermal_absorption_pct: float = 50.0  # Acts as the Fickian Max
     body_weight_kg: float = 60.0
     mc_samples: int = 10000
     random_seed: int = 42
-    
-    def __post_init__(self):
-        if not isinstance(self.smiles, str) or not self.smiles.strip():
-            raise ValidationError("Input SMILES must be a non-empty string.")
-        if self.product_type not in SCCS_PRODUCT_EXPOSURE:
-            raise ValidationError(f"Invalid product_type '{self.product_type}'.")
 
 @dataclass
 class EvidenceMass:
@@ -74,27 +69,19 @@ def combine_evidence(m1: EvidenceMass, m2: EvidenceMass) -> EvidenceMass:
         (m1.uncertain * m2.uncertain) / norm
     )
 
-def execute_provenance_audit(mol: Chem.Mol, schema_path: str = "regulatory_rules.json") -> Dict[str, Any]:
-    return {"valid": True, "status": "ACTIVE", "violations": [], "warnings": []}
-
 def run_structural_filter(mol: Chem.Mol) -> List[str]:
     params = FilterCatalogParams()
     params.AddCatalog(FilterCatalogParams.FilterCatalogs.BRENK)
     params.AddCatalog(FilterCatalogParams.FilterCatalogs.PAINS)
     return [match.GetDescription() for match in FilterCatalog(params).GetMatches(mol)]
 
-def simulate_skin_metabolism(parent_mol: Chem.Mol) -> List[Dict[str, Any]]:
-    return []
-
 def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) -> Dict[str, Any]:
     rng = np.random.default_rng(contract.random_seed)
     scenario = SCCS_PRODUCT_EXPOSURE[contract.product_type]
     n = contract.mc_samples
 
-    # Dynamic Assessment Factor (AF) Integration
     af_inter = 1.0 if contract.species.lower() == "human" else 10.0
     af_intra = 10.0 
-    
     duration_lower = contract.duration.lower()
     if duration_lower == "chronic": af_duration = 1.0
     elif duration_lower == "subchronic": af_duration = 3.0
@@ -107,11 +94,13 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
         
     target_af = af_inter * af_intra * af_duration * af_pod
 
-    cv_da = max(0.15, 0.40 - (0.05 * abs(logp - 2.5)))
-    da_mean = contract.dermal_absorption_pct / 100.0
-
+    # Right-Tail Truncation: Prevent Monte Carlo from violating Fickian mass limits
+    da_max = contract.dermal_absorption_pct / 100.0
+    da_mean = da_max * 0.70  
+    cv_da = 0.30 
+    
     bw = rng.normal(contract.body_weight_kg, 10.2, n).clip(40.0, 120.0)
-    da = rng.normal(da_mean, da_mean * cv_da, n).clip(0.001, 1.0)
+    da = rng.normal(da_mean, da_mean * cv_da, n).clip(0.0001, da_max)
     applied_g = rng.normal(scenario["daily_amount_g"], scenario["sigma_g"], n).clip(0.01, None)
     applied_mg = applied_g * 1000.0 * scenario["retention_factor"]
     pod_dist = rng.normal(contract.pod_noael_mg_kg_day, contract.pod_noael_mg_kg_day * 0.1, n).clip(0.001, None)
@@ -127,12 +116,8 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
         "ci_05_mos": round(float(np.percentile(mos, 5)), 1),
         "failure_probability": fail_prob,
         "target_af": target_af,
-        "dynamic_cv_da": round(cv_da, 3),
         "af_breakdown": {"interspecies": af_inter, "intraspecies": af_intra, "duration": af_duration, "data_quality": af_pod}
     }
-
-def execute_similarity_read_across(target_mol: Chem.Mol) -> List[Dict[str, Any]]:
-    return []
 
 def execute_full_compound_audit(smiles: str, product_type: str, concentration_pct: float, pod_noael_mg_kg_day: float, pod_type: str = "NOAEL", species: str = "Rat", duration: str = "Subchronic", dermal_absorption_pct: float = 50.0, body_weight_kg: float = 60.0, mc_samples: int = 10000, random_seed: int = 42) -> Dict[str, Any]:
     try:
@@ -140,9 +125,10 @@ def execute_full_compound_audit(smiles: str, product_type: str, concentration_pc
     except ValidationError as e:
         return {"valid": False, "error": str(e)}
 
-    mol = Chem.MolFromSmiles(contract.smiles)
-    if not mol: return {"valid": False, "error": f"Invalid SMILES."}
+    raw_mol = Chem.MolFromSmiles(contract.smiles)
+    if not raw_mol: return {"valid": False, "error": f"Invalid SMILES."}
     
+    mol = rdMolStandardize.LargestFragmentChooser().choose(raw_mol)
     canonical_smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
     logp = Descriptors.MolLogP(mol)
 
@@ -151,7 +137,12 @@ def execute_full_compound_audit(smiles: str, product_type: str, concentration_pc
     m_mos = EvidenceMass(safe=exp_safe_prob, toxic=mos["failure_probability"], uncertain=1.0 - exp_safe_prob - mos["failure_probability"])
     
     alerts = run_structural_filter(mol)
-    m_struct = EvidenceMass(safe=0.0, toxic=0.65, uncertain=0.35).apply_discounting(0.50) if alerts else EvidenceMass(safe=0.50, toxic=0.0, uncertain=0.50).apply_discounting(0.50)
+    alert_count = len(alerts)
+    if alert_count > 0:
+        toxic_mass = min(0.85, 0.40 + (0.15 * alert_count))
+        m_struct = EvidenceMass(safe=0.0, toxic=toxic_mass, uncertain=1.0-toxic_mass).apply_discounting(0.50)
+    else:
+        m_struct = EvidenceMass(safe=0.70, toxic=0.0, uncertain=0.30).apply_discounting(0.50)
 
     fused_mass = combine_evidence(m_mos, m_struct)
     
@@ -170,30 +161,10 @@ def execute_full_compound_audit(smiles: str, product_type: str, concentration_pc
         "reg": {}, "alerts": alerts, "met": [], "mos": mos, "analogs": []
     }
 
-class NumberedCanvas(canvas.Canvas):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._saved_page_states = []
-    def showPage(self):
-        self._saved_page_states.append(dict(self.__dict__))
-        self._startPage()
-    def save(self):
-        num_pages = len(self._saved_page_states)
-        for state in self._saved_page_states:
-            self.__dict__.update(state)
-            self.saveState()
-            self.setFont("Helvetica", 8)
-            self.setFillColor(colors.HexColor("#718096"))
-            self.drawString(36, 20, "Research-Use Computational Assessment | Non-Standalone Dossier")
-            self.drawRightString(576, 20, f"Page {self._pageNumber} of {num_pages}")
-            self.restoreState()
-            super().showPage()
-        super().save()
-
 def generate_enterprise_pdf(audit_data: Dict[str, Any]) -> BytesIO:
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
-    doc.build([Paragraph("COMPUTATIONAL TOXICOLOGY DOSSIER", ParagraphStyle("T", fontName="Helvetica-Bold", fontSize=16, textColor=colors.HexColor("#1B365D")))], canvasmaker=NumberedCanvas)
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    doc.build([Paragraph("COMPUTATIONAL TOXICOLOGY DOSSIER", ParagraphStyle("T", fontName="Helvetica-Bold", fontSize=16))])
     buffer.seek(0)
     return buffer
     
