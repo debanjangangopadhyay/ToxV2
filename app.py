@@ -1,5 +1,5 @@
 """
-Streamlit Interface for IATA Computational Screener (v5.0)
+Streamlit Interface for IATA Computational Screener (v5.1)
 Integrates TRACE-Onco compatible Deterministic Biophysics (DIEP-MoS) & Dynamic AF Matrix.
 """
 import streamlit as st
@@ -94,7 +94,8 @@ if "audit" in st.session_state:
         
         if diep:
             st.markdown("#### 1. Fickian Deterministic Bounds (DIEP-MoS)")
-            st.write(f"**Canonical API Properties:** MW: `{diep['api_mw']:.2f}` | LogP: `{diep['api_logp']:.2f}` (Salts Stripped)")
+            st.write(f"**Canonical API Properties:** MW: `{diep['api_mw']:.2f}` | LogP: `{diep['api_logp']:.2f}`")
+            st.write(f"**Topological Classification:** `{diep['cramer_class']}`")
             st.write(f"**Calculated Unionized Fraction ($f_{{ui}}$):** `{diep['f_ui']:.4f}`")
             st.write(f"**Fickian Dermal Absorption (DA%):** `{diep['da_pct_applied']:.2f}%`")
             st.write(f"**Max Systemic Exposure Dose (SED):** `{diep['sed_ug_day']:.2f} µg/day` vs TTC Limit `{diep['ttc_limit_ug']:.2f} µg/day`")
@@ -114,7 +115,8 @@ if "audit" in st.session_state:
             st.json({
                 "patient_hepatic_burden_ratio": diep["hepatic_burden_ratio"],
                 "bioavailability_status": diep["status"],
-                "recommendation": "Integrate ratio into Lifelines Cox-PH model to adjust overall survival curves based on systemic tolerability."
+                "structural_alerts": [alert for alert in data.get("alerts", [])],
+                "recommendation": "Integrate ratio directly into decentralized Lifelines Cox-PH model."
             })
         else:
             st.info("Enable Deterministic Biophysics to generate the downstream clinical integration payload.")
