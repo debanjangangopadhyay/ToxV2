@@ -8,19 +8,10 @@ class ToxicophoreMatchException(Exception): pass
 class PhysicochemicalConstraintError(ValueError): pass
 
 # --- 1. SCCS Mechanistic Product Registry ---
-# Maps product to (Amount applied mg/day, Surface Area cm2, Retention Factor)
 SCCS_MECHANISTIC_REGISTRY = {
     "Lip Balm (Leave-on)": (57.0, 4.8, 1.0),
     "Body Lotion (Leave-on)": (7820.0, 15670.0, 1.0),
     "Face Cream (Leave-on)": (1540.0, 565.0, 1.0),
-    "Deodorant (Leave-on)": (1500.0, 200.0, 1.0),
-    "Shampoo (Rinse-off)": (10460.0, 1440.0, 0.01)
-}
-
-EFSA_TTC_SYSTEMIC_UG_DAY = {
-    "Cramer_I": 1800.0 * 0.8,
-    "Cramer_II": 540.0 * 0.6,
-    "Cramer_III": 90.0 * 0.5
 }
 
 TOXICOPHORES = {
@@ -29,80 +20,69 @@ TOXICOPHORES = {
 }
 
 def standardize_api(smiles: str) -> Tuple[float, float, Chem.Mol]:
-    """Strips salts and returns canonical MW and LogP for the active API."""
+    """Isolates the Active Pharmaceutical Ingredient (API) by stripping salts/counterions."""
     mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError("Invalid SMILES string.")
-    
-    # Strip counterions (e.g., HCl, Na+) to analyze only the active parent
-    fragment_chooser = rdMolStandardize.LargestFragmentChooser()
-    clean_mol = fragment_chooser.choose(mol)
-    
-    mw = Descriptors.MolWt(clean_mol)
-    logp = Descriptors.MolLogP(clean_mol)
-    return mw, logp, clean_mol
+    if mol is None: raise ValueError("Invalid SMILES.")
+    clean_mol = rdMolStandardize.LargestFragmentChooser().choose(mol)
+    return Descriptors.MolWt(clean_mol), Descriptors.MolLogP(clean_mol), clean_mol
 
-def evaluate_structural_alerts(mol: Chem.Mol) -> None:
-    for alert_name, smarts in TOXICOPHORES.items():
-        if mol.HasSubstructMatch(Chem.MolFromSmarts(smarts)):
-            raise ToxicophoreMatchException(f"Critical Alert: Structural match for {alert_name}. Systemic risk too high for topical batching.")
-
-def calculate_fickian_absorption(mw: float, logp: float, f_ui: float, conc_pct: float, product_type: str) -> Tuple[float, float]:
+def calculate_dual_pathway_flux(mw: float, logp: float, ph: float, pka: float, is_base: bool, conc_pct: float, product_type: str) -> float:
     """
-    Calculates exact Dermal Absorption % using Fick's First Law and SCCS Surface Area.
+    Computes flux (mg/cm^2/hr) accounting for both unionized (lipophilic) and ionized (appendageal/pore) pathways.
     """
-    if product_type not in SCCS_MECHANISTIC_REGISTRY:
-        raise PhysicochemicalConstraintError(f"Product '{product_type}' not in mechanistic registry.")
-        
-    amount_mg, area_cm2, retention = SCCS_MECHANISTIC_REGISTRY[product_type]
-    
-    # Base Permeability (Potts & Guy)
-    log_kp = (0.71 * logp) - (0.0061 * mw) - 2.72
-    
-    # Mucosal Stratum Corneum Bypass mechanism
-    if "lip" in product_type.lower() or "oral" in product_type.lower():
-        # Mucosa is 10-100x more permeable, highly dependent on MW, less on LogP
-        log_kp = -0.0061 * mw - 1.5 
-    
-    kp_cm_hr = 10 ** log_kp
-    
-    # Volumetric concentration (assuming vehicle density ~ 1000 mg/cm3)
-    c_vehicle_mg_cm3 = (conc_pct / 100.0) * 1000.0 
-    
-    # Fick's Law: J (Flux) = Kp * C_vehicle
-    flux_mg_cm2_hr = kp_cm_hr * c_vehicle_mg_cm3 * f_ui
-    
-    # Total mass absorbed over 24 hours
-    total_absorbed_mg = flux_mg_cm2_hr * area_cm2 * 24.0 * retention
-    
-    # Theoretical maximum applied mass of the API
-    total_api_applied_mg = amount_mg * (conc_pct / 100.0) * retention
-    
-    # Dermal Absorption % (capped at 100%)
-    da_pct = min((total_absorbed_mg / total_api_applied_mg) * 100.0, 100.0) if total_api_applied_mg > 0 else 0.0
-    
-    return da_pct, (total_absorbed_mg * 1000.0) # return DA% and SED in micrograms
-
-def run_diep_gatekeeper(smiles: str, conc_pct: float, ph: float, pka: float, is_base: bool, product_type: str) -> Dict:
-    mw, logp, clean_mol = standardize_api(smiles)
-    evaluate_structural_alerts(clean_mol)
-    
-    if not (0 <= ph <= 14):
-        raise PhysicochemicalConstraintError("Formulation pH must be 0-14.")
+    # 1. Ionization State (Henderson-Hasselbalch)
     f_ui = 1 / (1 + 10**(pka - ph)) if is_base else 1 / (1 + 10**(ph - pka))
+    f_i = 1.0 - f_ui
     
-    da_pct, sed_ug_day = calculate_fickian_absorption(mw, logp, f_ui, conc_pct, product_type)
+    # 2. Base Permeability (Potts & Guy for Stratum Corneum)
+    kp_ui_cm_hr = 10 ** ((0.71 * logp) - (0.0061 * mw) - 2.72)
     
-    ttc_limit = EFSA_TTC_SYSTEMIC_UG_DAY["Cramer_III"]
-    hepatic_burden = sed_ug_day / ttc_limit
+    # Ionized species permeate approx 100x slower through intact skin (appendageal route)
+    kp_i_cm_hr = kp_ui_cm_hr * 0.01 
+
+    # 3. Mucosal Membrane Permeability Dynamics
+    if "lip" in product_type.lower() or "oral" in product_type.lower():
+        # Mucosa lacks stratum corneum; ionized/aqueous pore transport increases significantly
+        kp_ui_cm_hr *= 10.0   # Lipophilic pathway resistance drops
+        kp_i_cm_hr *= 100.0   # Aqueous pore pathway opens dramatically
+        
+    # 4. Volumetric Vehicle Concentration (assuming aqueous/lipid emulsion density ~ 1.0 g/cm^3)
+    c_vehicle_mg_cm3 = (conc_pct / 100.0) * 1000.0
+    
+    # 5. Dual-Pathway Fickian Flux (J = Kp * C)
+    flux_ui = kp_ui_cm_hr * (c_vehicle_mg_cm3 * f_ui)
+    flux_i = kp_i_cm_hr * (c_vehicle_mg_cm3 * f_i)
+    
+    return flux_ui + flux_i
+
+def execute_vmtb_safety_gate(smiles: str, conc_pct: float, ph: float, pka: float, is_base: bool, product_type: str, noael: float, body_weight: float) -> Dict:
+    mw, logp, clean_mol = standardize_api(smiles)
+    
+    for alert, smarts in TOXICOPHORES.items():
+        if clean_mol.HasSubstructMatch(Chem.MolFromSmarts(smarts)):
+            raise ToxicophoreMatchException(f"Critical Systemic Hazard: {alert} detected.")
+            
+    amount_mg, area_cm2, retention = SCCS_MECHANISTIC_REGISTRY[product_type]
+    total_flux = calculate_dual_pathway_flux(mw, logp, ph, pka, is_base, conc_pct, product_type)
+    
+    # Total Systemic Exposure Dose (SED)
+    absorbed_mass_mg = total_flux * area_cm2 * 24.0 * retention
+    sed_mg_kg_day = absorbed_mass_mg / body_weight
+    
+    # Deterministic Margin of Safety
+    mos = noael / sed_mg_kg_day if sed_mg_kg_day > 0 else float('inf')
+    
+    # Systemic Bioavailability Scalar (For TRACE-Onco integration)
+    # Scales 0 to >1.0. A score >1.0 means the patient's exposure exceeds the 100x safety factor.
+    s_bio_scalar = 100.0 / mos if mos > 0 else float('inf')
     
     return {
-        "api_mw": mw,
-        "api_logp": logp,
-        "f_ui": f_ui,
-        "da_pct_applied": da_pct,
-        "sed_ug_day": sed_ug_day,
-        "ttc_limit_ug": ttc_limit,
-        "hepatic_burden_ratio": hepatic_burden,
-        "status": "PASS" if hepatic_burden <= 1.0 else "FAIL"
+        "api_metrics": {"MW": round(mw, 2), "LogP": round(logp, 2), "f_ui": round(1 / (1 + 10**(pka - ph)) if is_base else 1 / (1 + 10**(ph - pka)), 4)},
+        "sed_mg_kg_day": round(sed_mg_kg_day, 6),
+        "deterministic_mos": round(mos, 2),
+        "trace_onco_payload": {
+            "systemic_bioavailability_scalar": round(s_bio_scalar, 4),
+            "clinical_verdict": "SUITABLE" if mos >= 100 else "REJECTED: SYSTEMIC TOXICITY"
+        }
     }
+    
