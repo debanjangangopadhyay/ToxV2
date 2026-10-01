@@ -1,5 +1,5 @@
 """
-Streamlit Interface for IATA Computational Screener (v5.2)
+Streamlit Interface for IATA Computational Screener (v5.3)
 Integrates TRACE-Onco compatible Deterministic Biophysics (DIEP-MoS) & Dynamic AF Matrix.
 """
 import streamlit as st
@@ -44,7 +44,9 @@ with col1:
     
     da = st.slider("Mean Dermal Absorption (%)", 0.1, 100.0, 50.0, disabled=use_deterministic_flux)
     bw = st.number_input("Body Weight (kg)", 10.0, 150.0, 60.0)
-    mc_samples = st.number_input("Monte Carlo Iterations", 1000, 100000, 10000)
+    
+    # Cast to integer and set safe step intervals for the Monte Carlo sampler
+    mc_samples = int(st.number_input("Monte Carlo Iterations", min_value=1000, max_value=100000, value=10000, step=1000))
     
     run = st.button("Run Research Audit", type="primary")
 
@@ -87,7 +89,9 @@ if "audit" in st.session_state:
     data = st.session_state["audit"]
     diep = st.session_state.get("diep")
     
-    t1, t2 = st.tabs(["Monte Carlo & Biophysics", "TRACE-Onco Synergy Payload"])
+    st.info(f"**Assessment ID:** `{data['assessment_id']}` | **Canonical SMILES:** `{data['canonical_smiles']}`")
+    
+    t1, t2, t3 = st.tabs(["Monte Carlo & Biophysics", "TRACE-Onco Synergy Payload", "Export Audit Ledger"])
     
     with t1:
         st.subheader("Systemic Bioavailability & Simulation Limits")
@@ -120,4 +124,18 @@ if "audit" in st.session_state:
             })
         else:
             st.info("Enable Deterministic Biophysics to generate the downstream clinical integration payload.")
+            
+    with t3:
+        st.subheader("Generate & Download PDF Ledger")
+        try:
+            pdf_bytes = generate_enterprise_pdf(data).getvalue()
+            st.download_button(
+                "📥 Download IATA-Aligned Computational Assessment (PDF)", 
+                data=pdf_bytes, 
+                file_name=f"{data['assessment_id']}.pdf", 
+                mime="application/pdf",
+                type="primary"
+            )
+        except Exception as e:
+            st.error(f"PDF Generation Error: {str(e)}")
             
