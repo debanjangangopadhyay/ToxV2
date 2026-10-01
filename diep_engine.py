@@ -30,7 +30,6 @@ def standardize_api(smiles: str) -> Tuple[float, float, Chem.Mol]:
     return Descriptors.MolWt(clean_mol), Descriptors.MolLogP(clean_mol), clean_mol
 
 def evaluate_cramer_class(mol: Chem.Mol, has_alerts: bool) -> str:
-    """Dynamically assigns Cramer Class based on topological complexity."""
     if has_alerts: return "Cramer_III"
     mw = Descriptors.MolWt(mol)
     rings = Descriptors.NumAromaticRings(mol)
@@ -49,7 +48,6 @@ def calculate_dual_pathway_flux(mw: float, logp: float, ph: float, pka: float, i
     kp_ui_cm_hr = 10 ** ((0.71 * logp) - (0.0061 * mw) - 2.72)
     kp_i_cm_hr = kp_ui_cm_hr * 0.01 
 
-    # Dynamic Exponential Decay for Mucosal Pores based on MW
     if "lip" in product_type.lower() or "oral" in product_type.lower() or "eye" in product_type.lower():
         pore_multiplier = max(1.0, 150.0 * math.exp(-0.01 * mw)) 
         lipo_multiplier = max(1.0, 10.0 * math.exp(-0.005 * mw))
@@ -57,7 +55,8 @@ def calculate_dual_pathway_flux(mw: float, logp: float, ph: float, pka: float, i
         kp_i_cm_hr *= pore_multiplier   
         
     k_vsc = 1.0 if logp < 3.0 else 0.5
-    c_vehicle_mg_cm3 = (conc_pct / 100.0) * 1000.0 * k_vsc
+    vehicle_density_g_cm3 = 1.0
+    c_vehicle_mg_cm3 = (conc_pct / 100.0) * (vehicle_density_g_cm3 * 1000.0) * k_vsc
     
     return (kp_ui_cm_hr * c_vehicle_mg_cm3 * f_ui) + (kp_i_cm_hr * c_vehicle_mg_cm3 * f_i)
 
