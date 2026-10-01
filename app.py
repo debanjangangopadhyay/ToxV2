@@ -1,6 +1,6 @@
 """
-Streamlit Interface for IATA Computational Screener (v4.0)
-Integrates TRACE-Onco compatible Deterministic Biophysics (DIEP-MoS).
+Streamlit Interface for IATA Computational Screener (v5.0)
+Integrates TRACE-Onco compatible Deterministic Biophysics (DIEP-MoS) & Dynamic AF Matrix.
 """
 import streamlit as st
 import pandas as pd
@@ -21,10 +21,19 @@ col1, col2 = st.columns([1, 3])
 with col1:
     st.subheader("Formulation Inputs")
     smiles = st.text_input("Target SMILES", "CC(=O)Oc1ccccc1C(=O)O")
-    
     product_type = st.selectbox("Product Scenario", list(SCCS_MECHANISTIC_REGISTRY.keys()), index=0)
     conc = st.number_input("Concentration (%)", min_value=0.01, max_value=100.0, value=2.0)
-    pod = st.number_input("NOAEL / POD (mg/kg/day)", min_value=0.1, max_value=10000.0, value=250.0)
+    
+    st.markdown("#### Toxicological Point of Departure (PoD)")
+    pod = st.number_input("PoD Value (mg/kg/day)", min_value=0.1, max_value=10000.0, value=250.0)
+    
+    pod_col1, pod_col2, pod_col3 = st.columns(3)
+    with pod_col1:
+        pod_type = st.selectbox("PoD Type", ["NOAEL", "LOAEL", "BMDL"], index=0)
+    with pod_col2:
+        species = st.selectbox("Test Species", ["Rat", "Mouse", "Dog", "Rabbit", "Human"], index=0)
+    with pod_col3:
+        duration = st.selectbox("Study Duration", ["Chronic", "Subchronic", "Subacute"], index=1)
     
     st.markdown("---")
     st.markdown("### Deterministic Biophysics (DIEP-MoS)")
@@ -60,6 +69,9 @@ with col2:
                 product_type=product_type,
                 concentration_pct=conc,
                 pod_noael_mg_kg_day=pod,
+                pod_type=pod_type,
+                species=species,
+                duration=duration,
                 dermal_absorption_pct=da, 
                 body_weight_kg=bw,
                 mc_samples=mc_samples
@@ -94,6 +106,7 @@ if "audit" in st.session_state:
         
         st.markdown("#### 2. Probabilistic Exposure (Monte Carlo)")
         st.write(f"**Median MoS:** `{data['mos']['median_mos']}` | **Failure Prob:** `{data['mos']['failure_probability']*100:.2f}%` against AF target of `{data['mos']['target_af']}`")
+        st.json(data["mos"]["af_breakdown"])
 
     with t2:
         st.subheader("TRACE-Onco / VMTB Output Vector")
