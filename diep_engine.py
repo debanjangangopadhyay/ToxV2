@@ -7,7 +7,6 @@ from rdkit.Chem.MolStandardize import rdMolStandardize
 class ToxicophoreMatchException(Exception): pass
 class PhysicochemicalConstraintError(ValueError): pass
 
-# Synchronized exactly with tox_engine to prevent Streamlit UI KeyErrors
 SCCS_MECHANISTIC_REGISTRY = {
     "Face Cream (Leave-on)": (1540.0, 565.0, 1.0),
     "Body Lotion (Leave-on)": (7820.0, 15670.0, 1.0),
@@ -41,7 +40,6 @@ def calculate_dual_pathway_flux(mw: float, logp: float, ph: float, pka: float, i
         kp_ui_cm_hr *= 10.0   
         kp_i_cm_hr *= 100.0   
         
-    # K_{v/sc}: Vehicle Partitioning heuristic - highly lipophilic compounds resist leaving lipid vehicles
     k_vsc = 1.0 if logp < 3.0 else 0.5
     c_vehicle_mg_cm3 = (conc_pct / 100.0) * 1000.0 * k_vsc
     
@@ -63,7 +61,6 @@ def run_diep_gatekeeper(smiles: str, conc_pct: float, ph: float, pka: float, is_
     amount_mg, area_cm2, retention = SCCS_MECHANISTIC_REGISTRY[product_type]
     total_flux = calculate_dual_pathway_flux(mw, logp, ph, pka, is_base, conc_pct, product_type)
     
-    # Mathematical correction: Enforce finite dose mass balance cap
     total_api_applied_mg = amount_mg * (conc_pct / 100.0) * retention
     theoretical_absorbed_mg = total_flux * area_cm2 * 24.0 * retention
     absorbed_mass_mg = min(theoretical_absorbed_mg, total_api_applied_mg)
@@ -75,7 +72,6 @@ def run_diep_gatekeeper(smiles: str, conc_pct: float, ph: float, pka: float, is_
     hepatic_burden = sed_ug_day / ttc_limit if ttc_limit > 0 else float('inf')
     f_ui = 1 / (1 + 10**(pka - ph)) if is_base else 1 / (1 + 10**(ph - pka))
     
-    # Returns precise keys mapped to app.py expectations + TRACE-Onco payload
     return {
         "api_mw": mw,
         "api_logp": logp,
