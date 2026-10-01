@@ -1,6 +1,6 @@
 """
-Streamlit Interface for IATA Computational Screener (v5.3)
-Integrates TRACE-Onco compatible Deterministic Biophysics (DIEP-MoS) & Dynamic AF Matrix.
+Streamlit Interface for IATA Computational Screener (v5.4)
+Integrates TRACE-Onco compatible Deterministic Biophysics (DIEP-MoS) & Multiprotic Ionization.
 """
 import streamlit as st
 import pandas as pd
@@ -39,13 +39,13 @@ with col1:
     st.markdown("### Deterministic Biophysics (DIEP-MoS)")
     use_deterministic_flux = st.checkbox("Enable Fickian Deterministic Flux", value=True)
     formulation_ph = st.number_input("Formulation pH", min_value=0.0, max_value=14.0, value=5.5)
-    pka = st.number_input("Compound pKa", min_value=0.0, max_value=14.0, value=8.6)
-    is_base = st.checkbox("Molecule is a Weak Base?", value=True)
+    
+    st.markdown("#### Multiprotic Ionization Centers")
+    acid_pkas_str = st.text_input("Acidic pKa values (comma-separated)", "4.2")
+    base_pkas_str = st.text_input("Basic pKa values (comma-separated)", "")
     
     da = st.slider("Mean Dermal Absorption (%)", 0.1, 100.0, 50.0, disabled=use_deterministic_flux)
     bw = st.number_input("Body Weight (kg)", 10.0, 150.0, 60.0)
-    
-    # Cast to integer and set safe step intervals for the Monte Carlo sampler
     mc_samples = int(st.number_input("Monte Carlo Iterations", min_value=1000, max_value=100000, value=10000, step=1000))
     
     run = st.button("Run Research Audit", type="primary")
@@ -54,10 +54,13 @@ with col2:
     if run and smiles:
         with st.spinner("Executing biophysical gates and Monte Carlo simulation..."):
             
+            acid_pkas = [float(x.strip()) for x in acid_pkas_str.split(",") if x.strip()]
+            base_pkas = [float(x.strip()) for x in base_pkas_str.split(",") if x.strip()]
+            
             diep_results = None
             if use_deterministic_flux:
                 try:
-                    diep_results = run_diep_gatekeeper(smiles, conc, formulation_ph, pka, is_base, product_type)
+                    diep_results = run_diep_gatekeeper(smiles, conc, formulation_ph, acid_pkas, base_pkas, product_type)
                     da = diep_results["da_pct_applied"] 
                 except ToxicophoreMatchException as e:
                     st.error(f"❌ **CRITICAL FATAL ALERT:** {str(e)}")
