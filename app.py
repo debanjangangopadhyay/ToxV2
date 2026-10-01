@@ -1,5 +1,5 @@
 """
-Streamlit Interface for IATA Computational Screener (v5.1)
+Streamlit Interface for IATA Computational Screener (v5.2)
 Integrates TRACE-Onco compatible Deterministic Biophysics (DIEP-MoS) & Dynamic AF Matrix.
 """
 import streamlit as st
@@ -116,7 +116,7 @@ if "audit" in st.session_state:
                 "patient_hepatic_burden_ratio": diep["hepatic_burden_ratio"],
                 "bioavailability_status": diep["status"],
                 "structural_alerts": [alert for alert in data.get("alerts", [])],
-                "recommendation": "Integrate ratio directly into decentralized Lifelines Cox-PH model."
+                "recommendation": "Integrate ratio directly into decentralized Lifelines Cox-PH model, dynamically weighted against patient baseline De Ritis ratio to account for hepatic stress."
             })
         else:
             st.info("Enable Deterministic Biophysics to generate the downstream clinical integration payload.")
