@@ -80,6 +80,7 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
     scenario = SCCS_PRODUCT_EXPOSURE[contract.product_type]
     n = contract.mc_samples
 
+    # 1. Dynamic Assessment Factor (AF) Integration
     af_inter = 1.0 if contract.species.lower() == "human" else 10.0
     af_intra = 10.0 
     duration_lower = contract.duration.lower()
@@ -94,16 +95,32 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
         
     target_af = af_inter * af_intra * af_duration * af_pod
 
+    # 2. Beta Distribution for Thermodynamic Truncation
     da_max = max(contract.dermal_absorption_pct / 100.0, 0.0001)
-    da_mean = da_max * 0.70  
-    cv_da = 0.30 
     
+    # We want the distribution to peak naturally at 70% of the absolute Fickian ceiling
+    target_mu = 0.70  
+    cv_da = 0.30 
+    target_var = (target_mu * cv_da) ** 2
+
+    # Convert Mean and Variance into Beta shape parameters (alpha, beta) using Method of Moments
+    phi = (target_mu * (1.0 - target_mu) / target_var) - 1.0
+    phi = max(phi, 0.001)  # Prevent negative/zero parameters to ensure a valid Beta curve
+    
+    alpha_beta = target_mu * phi
+    beta_beta = (1.0 - target_mu) * phi
+
+    # Generate the natively bounded [0,1] Beta array, then scale up to da_max
+    da_raw = rng.beta(alpha_beta, beta_beta, n)
+    da = da_raw * da_max
+
+    # 3. Standard Normal Distributions for Unbounded Biological/Usage Metrics
     bw = rng.normal(contract.body_weight_kg, 10.2, n).clip(40.0, 120.0)
-    da = rng.normal(da_mean, da_mean * cv_da, n).clip(0.00001, da_max)
     applied_g = rng.normal(scenario["daily_amount_g"], scenario["sigma_g"], n).clip(0.01, None)
     applied_mg = applied_g * 1000.0 * scenario["retention_factor"]
     pod_dist = rng.normal(contract.pod_noael_mg_kg_day, contract.pod_noael_mg_kg_day * 0.1, n).clip(0.001, None)
 
+    # 4. Exposure & Risk Vectorization
     sed = np.clip((applied_mg * (contract.concentration_pct / 100.0) * da) / bw, 1e-9, None)
     mos = pod_dist / sed
 
@@ -115,9 +132,14 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
         "ci_05_mos": round(float(np.percentile(mos, 5)), 1),
         "failure_probability": fail_prob,
         "target_af": target_af,
-        "af_breakdown": {"interspecies": af_inter, "intraspecies": af_intra, "duration": af_duration, "data_quality": af_pod}
+        "af_breakdown": {
+            "interspecies": af_inter, 
+            "intraspecies": af_intra, 
+            "duration": af_duration, 
+            "data_quality": af_pod
+        }
     }
-
+    
 def execute_full_compound_audit(smiles: str, product_type: str, concentration_pct: float, pod_noael_mg_kg_day: float, pod_type: str = "NOAEL", species: str = "Rat", duration: str = "Subchronic", dermal_absorption_pct: float = 50.0, body_weight_kg: float = 60.0, mc_samples: int = 10000, random_seed: int = 42) -> Dict[str, Any]:
     try:
         contract = AnalysisInputContract(smiles, product_type, concentration_pct, pod_noael_mg_kg_day, pod_type, species, duration, dermal_absorption_pct, body_weight_kg, mc_samples, random_seed)
