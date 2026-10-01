@@ -94,7 +94,7 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
         
     target_af = af_inter * af_intra * af_duration * af_pod
 
-    # Prevents NumPy array-crash if diep_engine returns 0.0 DA%
+    # Protected numerical boundaries to prevent NumPy crash and scalar overflow
     da_max = max(contract.dermal_absorption_pct / 100.0, 0.0001)
     da_mean = da_max * 0.70  
     cv_da = 0.30 
@@ -105,7 +105,8 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
     applied_mg = applied_g * 1000.0 * scenario["retention_factor"]
     pod_dist = rng.normal(contract.pod_noael_mg_kg_day, contract.pod_noael_mg_kg_day * 0.1, n).clip(0.001, None)
 
-    sed = (applied_mg * (contract.concentration_pct / 100.0) * da) / bw
+    # Hard-clip the denominator (SED) to prevent division by zero in MoS calculation
+    sed = np.clip((applied_mg * (contract.concentration_pct / 100.0) * da) / bw, 1e-9, None)
     mos = pod_dist / sed
 
     fail_prob = float(np.sum(mos < target_af) / n)
@@ -184,8 +185,8 @@ class NumberedCanvas(canvas.Canvas):
 def generate_enterprise_pdf(audit_data: Dict[str, Any]) -> BytesIO:
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
-    
     styles = getSampleStyleSheet()
+    
     h1 = ParagraphStyle("H1", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=11, textColor=colors.HexColor("#1B365D"), spaceBefore=8, spaceAfter=4)
     cell_bold = ParagraphStyle("CB", parent=styles["Normal"], fontSize=8, fontName="Helvetica-Bold", leading=10)
     cell_norm = ParagraphStyle("CN", parent=styles["Normal"], fontSize=8, leading=10)
@@ -205,4 +206,4 @@ def generate_enterprise_pdf(audit_data: Dict[str, Any]) -> BytesIO:
     doc.build(story, canvasmaker=NumberedCanvas)
     buffer.seek(0)
     return buffer
-                                
+    
