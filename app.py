@@ -1,11 +1,10 @@
 """
-Streamlit Interface for IATA Computational Screener (v3.0)
+Streamlit Interface for IATA Computational Screener (v4.0)
 Integrates TRACE-Onco compatible Deterministic Biophysics (DIEP-MoS).
 """
 import streamlit as st
 import pandas as pd
 
-# External modules (ensure these are in the same directory)
 from tox_engine import execute_full_compound_audit, generate_enterprise_pdf
 from diep_engine import (
     run_diep_gatekeeper,
@@ -23,7 +22,6 @@ with col1:
     st.subheader("Formulation Inputs")
     smiles = st.text_input("Target SMILES", "CC(=O)Oc1ccccc1C(=O)O")
     
-    # Maps dynamically to the DIEP registry, eliminating the previous hardcoded bug
     product_type = st.selectbox("Product Scenario", list(SCCS_MECHANISTIC_REGISTRY.keys()), index=0)
     conc = st.number_input("Concentration (%)", min_value=0.01, max_value=100.0, value=2.0)
     pod = st.number_input("NOAEL / POD (mg/kg/day)", min_value=0.1, max_value=10000.0, value=250.0)
@@ -49,7 +47,7 @@ with col2:
             if use_deterministic_flux:
                 try:
                     diep_results = run_diep_gatekeeper(smiles, conc, formulation_ph, pka, is_base, product_type)
-                    da = diep_results["da_pct_applied"] # Overwrite slider with Fickian math
+                    da = diep_results["da_pct_applied"] 
                 except ToxicophoreMatchException as e:
                     st.error(f"❌ **CRITICAL FATAL ALERT:** {str(e)}")
                     st.stop()
@@ -57,7 +55,6 @@ with col2:
                     st.error(f"❌ **Biophysical Calculation Error:** {str(e)}")
                     st.stop()
 
-            # Execute probabilistic Monte Carlo engine with the newly bounded DA parameter
             res = execute_full_compound_audit(
                 smiles=smiles,
                 product_type=product_type,
@@ -96,7 +93,7 @@ if "audit" in st.session_state:
                 st.success("✓ **DETERMINISTIC PASS:** Systemic exposure is within safe limits.")
         
         st.markdown("#### 2. Probabilistic Exposure (Monte Carlo)")
-        st.write(f"**Median MoS:** `{data['mos']['median_mos']}` | **Failure Prob:** `{data['mos']['failure_probability']*100:.2f}%`")
+        st.write(f"**Median MoS:** `{data['mos']['median_mos']}` | **Failure Prob:** `{data['mos']['failure_probability']*100:.2f}%` against AF target of `{data['mos']['target_af']}`")
 
     with t2:
         st.subheader("TRACE-Onco / VMTB Output Vector")
@@ -107,5 +104,5 @@ if "audit" in st.session_state:
                 "recommendation": "Integrate ratio into Lifelines Cox-PH model to adjust overall survival curves based on systemic tolerability."
             })
         else:
-            st.info("Enable Deterministic Biophysics to generate the TRACE-Onco payload.")
+            st.info("Enable Deterministic Biophysics to generate the downstream clinical integration payload.")
             
