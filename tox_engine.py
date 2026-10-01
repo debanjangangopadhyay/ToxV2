@@ -16,7 +16,7 @@ from rdkit.Chem.MolStandardize import rdMolStandardize
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Table
+from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table
 from reportlab.pdfgen import canvas
 
 class ValidationError(ValueError): pass
@@ -94,7 +94,6 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
         
     target_af = af_inter * af_intra * af_duration * af_pod
 
-    # Protected numerical boundaries to prevent NumPy crash and scalar overflow
     da_max = max(contract.dermal_absorption_pct / 100.0, 0.0001)
     da_mean = da_max * 0.70  
     cv_da = 0.30 
@@ -105,7 +104,6 @@ def calculate_probabilistic_mos(contract: AnalysisInputContract, logp: float) ->
     applied_mg = applied_g * 1000.0 * scenario["retention_factor"]
     pod_dist = rng.normal(contract.pod_noael_mg_kg_day, contract.pod_noael_mg_kg_day * 0.1, n).clip(0.001, None)
 
-    # Hard-clip the denominator (SED) to prevent division by zero in MoS calculation
     sed = np.clip((applied_mg * (contract.concentration_pct / 100.0) * da) / bw, 1e-9, None)
     mos = pod_dist / sed
 
@@ -147,9 +145,12 @@ def execute_full_compound_audit(smiles: str, product_type: str, concentration_pc
 
     fused_mass = combine_evidence(m_mos, m_struct)
     
+    # Cryptographic Hash now explicitly binds formulation parameters to prevent collision
+    hash_payload = f"{canonical_smiles}_{contract.product_type}_{contract.concentration_pct}_{contract.dermal_absorption_pct}"
+    
     return {
         "valid": True,
-        "assessment_id": f"IATA-V5-{hashlib.sha256(canonical_smiles.encode()).hexdigest()[:10].upper()}",
+        "assessment_id": f"IATA-V5-{hashlib.sha256(hash_payload.encode()).hexdigest()[:10].upper()}",
         "mol": mol,
         "canonical_smiles": canonical_smiles,
         "contract": contract,
@@ -197,11 +198,21 @@ def generate_enterprise_pdf(audit_data: Dict[str, Any]) -> BytesIO:
     ]
     
     if audit_data.get("valid"):
+        mos_data = audit_data["mos"]
+        dst = audit_data["dst_metrics"]
+        
         story.append(Paragraph("1. Stochastic Scenario Margin of Safety (Monte Carlo Analysis)", h1))
         story.append(Table([
             [Paragraph("Median SED (mg/kg/d)", cell_bold), Paragraph("Median MoS", cell_bold), Paragraph("5th Percentile MoS", cell_bold), Paragraph("Failure Probability", cell_bold)],
-            [Paragraph(str(audit_data["mos"]["median_sed_mg_kg_day"]), cell_norm), Paragraph(str(audit_data["mos"]["median_mos"]), cell_norm), Paragraph(str(audit_data["mos"]["ci_05_mos"]), cell_norm), Paragraph(f"{audit_data['mos']['failure_probability']*100:.2f}%", cell_norm)]
+            [Paragraph(str(mos_data["median_sed_mg_kg_day"]), cell_norm), Paragraph(str(mos_data["median_mos"]), cell_norm), Paragraph(str(mos_data["ci_05_mos"]), cell_norm), Paragraph(f"{mos_data['failure_probability']*100:.2f}%", cell_norm)]
         ], colWidths=[135, 135, 135, 135], style=[('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E0')), ('PADDING', (0,0), (-1,-1), 4)]))
+        
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("2. Evidentiary Mass Distribution (Dempster-Shafer)", h1))
+        story.append(Table([
+            [Paragraph("Belief (Safe)", cell_bold), Paragraph("Belief (Toxic)", cell_bold), Paragraph("Epistemic Uncertainty", cell_bold)],
+            [Paragraph(f"{dst['belief_safe']}%", cell_norm), Paragraph(f"{dst['belief_toxic']}%", cell_norm), Paragraph(f"{dst['epistemic_uncertainty']}%", cell_norm)]
+        ], colWidths=[180, 180, 180], style=[('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E0')), ('PADDING', (0,0), (-1,-1), 4)]))
         
     doc.build(story, canvasmaker=NumberedCanvas)
     buffer.seek(0)
