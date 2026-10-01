@@ -14,32 +14,26 @@ def calculate_probabilistic_mos(
     random_seed: int = 42
 ) -> Dict[str, Any]:
     """
-    Executes a Monte Carlo probabilistic exposure & Margin of Safety (MoS) simulation
-    incorporating dynamic toxicology assessment factors (AF).
+    Executes a Monte Carlo probabilistic exposure & Margin of Safety (MoS) simulation.
+    All scalar outputs are strictly cast to Python native float types.
     """
-    # 1. Dynamic Assessment Factor Matrix
+    # Toxicological Assessment Factors (AF)
     af_inter = 1.0 if species.lower() == "human" else 10.0
     af_intra = 10.0 
     
     duration_lower = duration.lower()
-    if duration_lower == "chronic":
-        af_duration = 1.0
-    elif duration_lower == "subchronic":
-        af_duration = 3.0
-    else:
-        af_duration = 10.0
+    if duration_lower == "chronic": af_duration = 1.0
+    elif duration_lower == "subchronic": af_duration = 3.0
+    else: af_duration = 10.0
         
     pod_lower = pod_type.lower()
-    if pod_lower == "loael":
-        af_pod = 3.0
-    elif "bmdl" in pod_lower:
-        af_pod = 1.0
-    else:
-        af_pod = 1.0
+    if pod_lower == "loael": af_pod = 3.0
+    elif "bmdl" in pod_lower: af_pod = 1.0
+    else: af_pod = 1.0
         
-    target_af = af_inter * af_intra * af_duration * af_pod
+    target_af = float(af_inter * af_intra * af_duration * af_pod)
 
-    # 2. Vectorized Monte Carlo Distribution Sampling
+    # Vectorized Monte Carlo Distribution Sampling
     np.random.seed(random_seed)
     
     bw_dist = np.random.normal(60.0, 10.2, n_iterations).clip(40.0, 120.0)
@@ -48,17 +42,17 @@ def calculate_probabilistic_mos(
     amount_dist = np.random.normal(product_amount_g, product_amount_g * 0.15, n_iterations).clip(product_amount_g * 0.5, product_amount_g * 2.0)
     pod_dist = np.random.normal(pod_value, pod_value * 0.10, n_iterations).clip(pod_value * 0.5, None)
 
-    # 3. Vectorized SED & MoS Evaluation
+    # Vectorized SED & MoS Evaluation
     conc_fraction = concentration_pct / 100.0
     applied_mg_dist = amount_dist * 1000.0
     
     sed_dist = (applied_mg_dist * conc_fraction * retention_factor * da_dist) / bw_dist
     mos_dist = pod_dist / sed_dist
 
-    # 4. Statistical Extraction & Risk Verdict
-    median_mos = np.median(mos_dist)
-    ci_05 = np.percentile(mos_dist, 5)
-    ci_95 = np.percentile(mos_dist, 95)
+    # Statistical Extraction & Risk Verdict
+    median_mos = float(np.median(mos_dist))
+    ci_05 = float(np.percentile(mos_dist, 5))
+    ci_95 = float(np.percentile(mos_dist, 95))
     
     failure_probability = float(np.sum(mos_dist < target_af) / n_iterations)
     
@@ -76,19 +70,20 @@ def calculate_probabilistic_mos(
         "valid": True,
         "target_assessment_factor": target_af,
         "af_breakdown": {
-            "interspecies": af_inter,
-            "intraspecies": af_intra,
-            "duration": af_duration,
-            "data_quality": af_pod
+            "interspecies": float(af_inter),
+            "intraspecies": float(af_intra),
+            "duration": float(af_duration),
+            "data_quality": float(af_pod)
         },
         "simulation_results": {
-            "iterations": n_iterations,
-            "median_sed_mg_kg_day": round(float(np.median(sed_dist)), 4),
-            "median_mos": round(float(median_mos), 1),
-            "mos_5th_percentile": round(float(ci_05), 1),
-            "mos_95th_percentile": round(float(ci_95), 1),
-            "failure_probability_pct": round(failure_probability * 100, 2)
+            "iterations": int(n_iterations),
+            "median_sed_mg_kg_day": float(round(float(np.median(sed_dist)), 6)),
+            "median_mos": float(round(median_mos, 1)),
+            "mos_5th_percentile": float(round(ci_05, 1)),
+            "mos_95th_percentile": float(round(ci_95, 1)),
+            "failure_probability_pct": float(round(failure_probability * 100.0, 2))
         },
         "verdict": verdict,
         "is_safe": is_safe
     }
+    
