@@ -89,7 +89,19 @@ else:
         for e in registered_raw
     }
 
+# SAFEGUARD 1: Halt gracefully if no engines loaded (prevents NoneType dropdowns)
+if not engine_options:
+    st.error("🚨 Critical Error: The Engine Registry is empty.")
+    st.warning("Check your terminal logs. The `FSANZ294Engine` likely failed to instantiate silently in `engines/__init__.py` due to an underlying ABC abstract method requirement or missing import.")
+    st.stop()
+
 selected_label = st.sidebar.selectbox("Active Domain Engine:", list(engine_options.keys()))
+
+# SAFEGUARD 2: Fallback if Streamlit session state holds a stale/cached label
+if selected_label not in engine_options:
+    selected_label = list(engine_options.keys())[0]
+
+# Safe lookup now guaranteed
 active_engine_id = engine_options[selected_label]
 active_engine = REGISTRY.get(active_engine_id) if hasattr(REGISTRY, "get") else REGISTRY.get_engine(active_engine_id)
 
@@ -104,6 +116,7 @@ st.sidebar.info(
 )
 
 st.title(engine_name_str)
+
 
 # =====================================================================
 # 3. DYNAMIC INPUTS & EXECUTION WORKFLOW
