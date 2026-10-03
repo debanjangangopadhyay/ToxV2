@@ -119,7 +119,7 @@ st.title(engine_name_str)
 # 3. DYNAMIC INPUTS & EXECUTION WORKFLOW
 # =====================================================================
 
-col1, col2 = st.columns([1, 2.5])
+col1, col2 = st.columns([2, 1], gap="large")
 
 with col1:
     try:
