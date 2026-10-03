@@ -11,7 +11,7 @@ class BaseComputationalEngine(ABC):
     @property
     @abstractmethod
     def engine_name(self) -> str:
-        """Human-readable display name for Streamlit UI."""
+        """Human-readable display title for UI rendering."""
         pass
 
     @property
@@ -22,11 +22,11 @@ class BaseComputationalEngine(ABC):
 
     @abstractmethod
     def render_inputs(self, st_ctx: Any) -> Dict[str, Any]:
-        """Renders engine-specific UI widgets."""
+        """Renders dynamic, domain-specific Streamlit input widgets."""
         pass
 
     @abstractmethod
     def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """Runs the domain mathematical calculations."""
+        """Executes domain-specific mathematical algorithms."""
         pass
-      
+        
