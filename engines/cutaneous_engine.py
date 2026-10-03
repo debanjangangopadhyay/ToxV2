@@ -1,6 +1,6 @@
 """
 Cutaneous Bioactivation & Dermal Biophysics Engine Adapter
-Wraps legacy toxicity & skin permeability modules under the BaseComputationalEngine contract.
+Full feature-parity wrapper for diep_engine and tox_engine.
 """
 
 import streamlit as st
@@ -8,9 +8,12 @@ import pandas as pd
 from typing import Dict, Any
 from engines.base_engine import BaseComputationalEngine
 
-# Import legacy root engines
-import tox_engine
-import diep_engine
+from tox_engine import execute_full_compound_audit
+from diep_engine import (
+    run_diep_gatekeeper,
+    SCCS_MECHANISTIC_REGISTRY,
+    ToxicophoreMatchException
+)
 
 
 class CutaneousEngineAdapter(BaseComputationalEngine):
@@ -33,66 +36,111 @@ class CutaneousEngineAdapter(BaseComputationalEngine):
             "name": self.engine_name,
             "category": self.domain_category,
             "version": "2.1.0",
-            "description": "Integrated Cramer Class alerts, Henderson-Hasselbalch ionization, Fickian percutaneous flux, and Monte Carlo Margin of Safety (MoS) modeling."
+            "description": "IATA Computational Screener integrating TRACE-Onco Deterministic Biophysics (DIEP-MoS), Multiprotic Ionization, and Monte Carlo Probabilistic Risk."
         }
 
     def render_inputs(self, st_ctx: Any = st) -> Dict[str, Any]:
-        st_ctx.sidebar.markdown("### 🧬 Molecule & Physicochemical Inputs")
-        smiles = st_ctx.sidebar.text_input("Canonical SMILES", value="CC1=C(C=C(C=C1)N)N")
-        pka_acid = st_ctx.sidebar.number_input("pKa Acidic", value=14.0, step=0.1)
-        pka_base = st_ctx.sidebar.number_input("pKa Basic", value=4.5, step=0.1)
-        mw = st_ctx.sidebar.number_input("Molecular Weight (g/mol)", value=122.17, step=0.1)
-        logp = st_ctx.sidebar.number_input("LogKow (Octanol-Water)", value=1.4, step=0.1)
+        """Renders all original IATA input fields in the sidebar."""
+        st_ctx.sidebar.subheader("Formulation Inputs")
+        smiles = st_ctx.sidebar.text_input("Target SMILES", "CC(=O)Oc1ccccc1C(=O)O")
+        product_type = st_ctx.sidebar.selectbox("Product Scenario", list(SCCS_MECHANISTIC_REGISTRY.keys()), index=0)
+        conc = st_ctx.sidebar.number_input("Concentration (%)", min_value=0.01, max_value=100.0, value=2.0)
 
-        st_ctx.sidebar.markdown("### 🧴 Application & Exposure Settings")
-        conc_pct = st_ctx.sidebar.number_input("Concentration (%)", value=1.0, step=0.1)
-        applied_mg_cm2 = st_ctx.sidebar.number_input("Applied Dose (mg/cm²)", value=2.0, step=0.1)
-        surface_area_cm2 = st_ctx.sidebar.number_input("Surface Area (cm²)", value=560.0, step=10.0)
-        body_weight_kg = st_ctx.sidebar.number_input("Body Weight (kg)", value=60.0, step=1.0)
-        pod_mg_kg_day = st_ctx.sidebar.number_input("Point of Departure (PoD mg/kg/day)", value=15.0, step=1.0)
+        st_ctx.sidebar.markdown("#### Toxicological Point of Departure (PoD)")
+        pod = st_ctx.sidebar.number_input("PoD Value (mg/kg/day)", min_value=0.1, max_value=10000.0, value=250.0)
+        
+        pod_type = st_ctx.sidebar.selectbox("PoD Type", ["NOAEL", "LOAEL", "BMDL"], index=0)
+        species = st_ctx.sidebar.selectbox("Test Species", ["Rat", "Mouse", "Dog", "Rabbit", "Human"], index=0)
+        duration = st_ctx.sidebar.selectbox("Study Duration", ["Chronic", "Subchronic", "Subacute"], index=1)
+
+        st_ctx.sidebar.markdown("---")
+        st_ctx.sidebar.markdown("### Deterministic Biophysics (DIEP-MoS)")
+        use_deterministic_flux = st_ctx.sidebar.checkbox("Enable Fickian Deterministic Flux", value=True)
+        formulation_ph = st_ctx.sidebar.number_input("Formulation pH", min_value=0.0, max_value=14.0, value=5.5)
+
+        st_ctx.sidebar.markdown("#### Multiprotic Ionization Centers")
+        acid_pkas_str = st_ctx.sidebar.text_input("Acidic pKa values (comma-separated)", "4.2")
+        base_pkas_str = st_ctx.sidebar.text_input("Basic pKa values (comma-separated)", "")
+
+        da = st_ctx.sidebar.slider("Mean Dermal Absorption (%)", 0.1, 100.0, 50.0, disabled=use_deterministic_flux)
+        bw = st_ctx.sidebar.number_input("Body Weight (kg)", 10.0, 150.0, 60.0)
+        mc_samples = int(st_ctx.sidebar.number_input("Monte Carlo Iterations", min_value=1000, max_value=100000, value=10000, step=1000))
+
+        with st_ctx.sidebar.expander("Advanced Dempster-Shafer Prior Calibration"):
+            baseline_safe = st_ctx.sidebar.slider("Baseline Safe Prior Mass", 0.1, 0.9, 0.70, 0.05)
+            discount_rate = st_ctx.sidebar.slider("Source Discount Rate", 0.1, 0.9, 0.50, 0.05)
 
         return {
             "smiles": smiles,
-            "pka_acid": pka_acid,
-            "pka_base": pka_base,
-            "mw": mw,
-            "logp": logp,
-            "conc_pct": conc_pct,
-            "applied_mg_cm2": applied_mg_cm2,
-            "surface_area_cm2": surface_area_cm2,
-            "body_weight_kg": body_weight_kg,
-            "pod_mg_kg_day": pod_mg_kg_day
+            "product_type": product_type,
+            "conc": conc,
+            "pod": pod,
+            "pod_type": pod_type,
+            "species": species,
+            "duration": duration,
+            "use_deterministic_flux": use_deterministic_flux,
+            "ph": formulation_ph,
+            "acid_pkas_str": acid_pkas_str,
+            "base_pkas_str": base_pkas_str,
+            "da": da,
+            "bw": bw,
+            "mc_samples": mc_samples,
+            "baseline_safe": baseline_safe,
+            "discount_rate": discount_rate
         }
 
     def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        # 1. Run Legacy Cutaneous & Exposure Analytics
-        tox_res = tox_engine.evaluate_molecule(inputs["smiles"])
-        
-        sed_mg_kg_day = (
-            (inputs["conc_pct"] / 100.0) * inputs["applied_mg_cm2"] * inputs["surface_area_cm2"]
-        ) / inputs["body_weight_kg"]
+        """Executes the dual DIEP biophysics gatekeeper and full compound audit."""
+        smiles = inputs["smiles"]
+        product_type = inputs["product_type"]
+        conc = inputs["conc"]
+        pod = inputs["pod"]
+        pod_type = inputs["pod_type"]
+        species = inputs["species"]
+        duration = inputs["duration"]
+        use_deterministic_flux = inputs["use_deterministic_flux"]
+        ph = inputs["ph"]
+        da = inputs["da"]
+        bw = inputs["bw"]
+        mc_samples = inputs["mc_samples"]
+        baseline_safe = inputs["baseline_safe"]
+        discount_rate = inputs["discount_rate"]
 
-        mos = inputs["pod_mg_kg_day"] / sed_mg_kg_day if sed_mg_kg_day > 0 else 9999.0
-        
-        # 2. Run Monte Carlo & Dempster-Shafer Prior Fusion
-        diep_res = diep_engine.run_dempster_shafer_monte_carlo(
-            pod=inputs["pod_mg_kg_day"],
-            sed=sed_mg_kg_day
+        acid_pkas = [float(x.strip()) for x in inputs["acid_pkas_str"].split(",") if x.strip()]
+        base_pkas = [float(x.strip()) for x in inputs["base_pkas_str"].split(",") if x.strip()]
+
+        diep_results = None
+        if use_deterministic_flux:
+            # Propagates ToxicophoreMatchException directly to app.py handler
+            diep_results = run_diep_gatekeeper(
+                smiles=smiles,
+                conc_pct=conc,
+                ph=ph,
+                acid_pkas=acid_pkas,
+                base_pkas=base_pkas,
+                product_type=product_type
+            )
+            da = diep_results["da_pct_applied"]
+
+        audit_res = execute_full_compound_audit(
+            smiles=smiles,
+            product_type=product_type,
+            concentration_pct=conc,
+            pod_noael_mg_kg_day=pod,
+            pod_type=pod_type,
+            species=species,
+            duration=duration,
+            dermal_absorption_pct=da,
+            body_weight_kg=bw,
+            mc_samples=mc_samples,
+            baseline_safe_belief=baseline_safe,
+            structural_discount_rate=discount_rate
         )
 
+        if not audit_res.get("valid", False):
+            raise ValueError(f"Audit Execution Failed: {audit_res.get('error')}")
+
         return {
-            "status": "PASS" if mos >= 100.0 else "FAIL",
-            "is_compliant": mos >= 100.0,
-            "smiles": inputs["smiles"],
-            "cramer_class": tox_res.get("cramer_class", "Class III"),
-            "sed_mg_kg_day": sed_mg_kg_day,
-            "mos": mos,
-            "belief_safe": diep_res.get("belief_safe", 0.95),
-            "plausibility_safe": diep_res.get("plausibility_safe", 0.99),
-            "audit_logs": [
-                f"Computed SED: {sed_mg_kg_day:.4f} mg/kg/day",
-                f"Margin of Safety (MoS): {mos:.1f} (Threshold >= 100.0)",
-                f"Dempster-Shafer Belief in Safety: {diep_res.get('belief_safe', 0.95):.3f}"
-            ]
+            "audit": audit_res,
+            "diep": diep_results
         }
-        
