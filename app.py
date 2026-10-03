@@ -19,13 +19,10 @@ st.set_page_config(
 )
 
 try:
-    from engines import REGISTRY
+    from engines.registry import REGISTRY
 except ImportError:
-    try:
-        from engines import registry as REGISTRY
-    except ImportError:
-        st.error("Fatal Error: Could not locate Engine Registry module.")
-        st.stop()
+    st.error("Fatal Error: Could not locate Engine Registry module.")
+    st.stop()
 
 try:
     from diep_engine import ToxicophoreMatchException
