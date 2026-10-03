@@ -55,16 +55,22 @@ class FSANZ294Engine(BaseComputationalEngine):
     RDKit-powered computational engine for FSANZ Standard 2.9.4 food chemistry verification.
     """
 
-    def __init__(self, engine_id: str = "fsanz_294_sports_drink", name: str = "FSANZ 2.9.4 Electrolyte & Osmolality Engine (RDKit)"):
-        """Explicit constructor to allow parameterless instantiation by Registry."""
-        try:
-            super().__init__()
-        except TypeError:
-            pass
+        def __init__(self):
+        """Explicit constructor to allow parameterless instantiation."""
+        pass
 
-        self.engine_id = engine_id
-        self.engine_name = name
-        self.domain_category = "Food Science & Regulatory Chemistry"
+    @property
+    def engine_id(self) -> str:
+        return "fsanz_294_sports_drink"
+
+    @property
+    def engine_name(self) -> str:
+        return "FSANZ 2.9.4 Electrolyte & Osmolality Engine (RDKit)"
+
+    @property
+    def domain_category(self) -> str:
+        return "Food Science & Regulatory Chemistry"
+       
 
     def get_metadata(self) -> Dict[str, str]:
         return {
