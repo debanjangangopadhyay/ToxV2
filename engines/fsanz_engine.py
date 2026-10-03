@@ -55,7 +55,7 @@ class FSANZ294Engine(BaseComputationalEngine):
     RDKit-powered computational engine for FSANZ Standard 2.9.4 food chemistry verification.
     """
 
-        def __init__(self):
+    def __init__(self):
         """Explicit constructor to allow parameterless instantiation."""
         pass
 
