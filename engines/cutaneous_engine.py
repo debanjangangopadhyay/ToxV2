@@ -15,29 +15,41 @@ import diep_engine
 
 class CutaneousEngineAdapter(BaseComputationalEngine):
 
+    @property
+    def engine_id(self) -> str:
+        return "cutaneous_iata_diep"
+
+    @property
+    def engine_name(self) -> str:
+        return "Cutaneous Biophysics & Toxicological Screener"
+
+    @property
+    def domain_category(self) -> str:
+        return "Dermal Safety & Bioactivation"
+
     def get_metadata(self) -> Dict[str, str]:
         return {
-            "id": "cutaneous_iata_diep",
-            "name": "Cutaneous Biophysics & Toxicological Screener",
-            "category": "Dermal Safety & Bioactivation",
+            "id": self.engine_id,
+            "name": self.engine_name,
+            "category": self.domain_category,
             "version": "2.1.0",
             "description": "Integrated Cramer Class alerts, Henderson-Hasselbalch ionization, Fickian percutaneous flux, and Monte Carlo Margin of Safety (MoS) modeling."
         }
 
-    def render_inputs(self) -> Dict[str, Any]:
-        st.sidebar.markdown("### 🧬 Molecule & Physicochemical Inputs")
-        smiles = st.sidebar.text_input("Canonical SMILES", value="CC1=C(C=C(C=C1)N)N")
-        pka_acid = st.sidebar.number_input("pKa Acidic", value=14.0, step=0.1)
-        pka_base = st.sidebar.number_input("pKa Basic", value=4.5, step=0.1)
-        mw = st.sidebar.number_input("Molecular Weight (g/mol)", value=122.17, step=0.1)
-        logp = st.sidebar.number_input("LogKow (Octanol-Water)", value=1.4, step=0.1)
+    def render_inputs(self, st_ctx: Any = st) -> Dict[str, Any]:
+        st_ctx.sidebar.markdown("### 🧬 Molecule & Physicochemical Inputs")
+        smiles = st_ctx.sidebar.text_input("Canonical SMILES", value="CC1=C(C=C(C=C1)N)N")
+        pka_acid = st_ctx.sidebar.number_input("pKa Acidic", value=14.0, step=0.1)
+        pka_base = st_ctx.sidebar.number_input("pKa Basic", value=4.5, step=0.1)
+        mw = st_ctx.sidebar.number_input("Molecular Weight (g/mol)", value=122.17, step=0.1)
+        logp = st_ctx.sidebar.number_input("LogKow (Octanol-Water)", value=1.4, step=0.1)
 
-        st.sidebar.markdown("### 🧴 Application & Exposure Settings")
-        conc_pct = st.sidebar.number_input("Concentration (%)", value=1.0, step=0.1)
-        applied_mg_cm2 = st.sidebar.number_input("Applied Dose (mg/cm²)", value=2.0, step=0.1)
-        surface_area_cm2 = st.sidebar.number_input("Surface Area (cm²)", value=560.0, step=10.0)
-        body_weight_kg = st.sidebar.number_input("Body Weight (kg)", value=60.0, step=1.0)
-        pod_mg_kg_day = st.sidebar.number_input("Point of Departure (PoD mg/kg/day)", value=15.0, step=1.0)
+        st_ctx.sidebar.markdown("### 🧴 Application & Exposure Settings")
+        conc_pct = st_ctx.sidebar.number_input("Concentration (%)", value=1.0, step=0.1)
+        applied_mg_cm2 = st_ctx.sidebar.number_input("Applied Dose (mg/cm²)", value=2.0, step=0.1)
+        surface_area_cm2 = st_ctx.sidebar.number_input("Surface Area (cm²)", value=560.0, step=10.0)
+        body_weight_kg = st_ctx.sidebar.number_input("Body Weight (kg)", value=60.0, step=1.0)
+        pod_mg_kg_day = st_ctx.sidebar.number_input("Point of Departure (PoD mg/kg/day)", value=15.0, step=1.0)
 
         return {
             "smiles": smiles,
