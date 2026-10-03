@@ -220,10 +220,10 @@ if "results" in st.session_state and st.session_state.get("engine_id") == engine
             except Exception as e:
                 st.error(f"PDF Generation Error: {str(e)}")
 
-        # -------------------------------------------------------------
-        # DOMAIN 2: FSANZ STANDARD 2.9.4 SPORTS DRINK ENGINE
-        # -------------------------------------------------------------
-        elif engine_id_str in ["fsanz_294_sports_drink", "fsanz_engine"]:
+     # -------------------------------------------------------------
+     # DOMAIN 2: FSANZ STANDARD 2.9.4 SPORTS DRINK ENGINE
+     # -------------------------------------------------------------
+     elif engine_id_str in ["fsanz_294_sports_drink", "fsanz_engine"]:
             overall_status = res.get("overall_status", "PASS" if res.get("is_compliant", True) or res.get("status") == "PASS" else "FAIL")
             osmolality = res.get("osmolality_mOsm_kg", 0.0)
             sodium_mmol = res.get("sodium_mmol_l", res.get("na_mmol_l", 0.0))
