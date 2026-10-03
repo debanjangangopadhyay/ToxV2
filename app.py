@@ -19,7 +19,7 @@ st.set_page_config(
 )
 
 try:
-    from engines.registry import REGISTRY
+    from engines import REGISTRY
 except ImportError:
     st.error("Fatal Error: Could not locate Engine Registry module.")
     st.stop()
