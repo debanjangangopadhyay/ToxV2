@@ -13,7 +13,7 @@ class EngineRegistry:
             raise KeyError(f"Engine '{engine_id}' is not registered in Strategy Registry.")
         return self._engines[engine_id]
 
-    def list_engines(self) -> list:
+    def list_engines(self) -> List[Dict[str, str]]:
         return [
             {
                 "id": eng.engine_id,
@@ -22,6 +22,5 @@ class EngineRegistry:
             }
             for eng in self._engines.values()
         ]
-        
 
 REGISTRY = EngineRegistry()
