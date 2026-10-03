@@ -1,154 +1,167 @@
 """
-Streamlit Interface for IATA Computational Screener
-Integrates TRACE-Onco compatible Deterministic Biophysics (DIEP-MoS) & Multiprotic Ionization.
+Streamlit Interface for Multi-Domain In-Silico Computational Screener
+Integrates Cutaneous Bioactivation (IATA/DIEP-MoS/TRACE-Onco) &
+FSANZ Standard 2.9.4 Food Science Engines via Strategy Registry Architecture.
 """
+
 import streamlit as st
 import pandas as pd
 
-from tox_engine import execute_full_compound_audit, generate_enterprise_pdf
-from diep_engine import (
-    run_diep_gatekeeper,
-    SCCS_MECHANISTIC_REGISTRY,
-    ToxicophoreMatchException,
-    PhysicochemicalConstraintError
+# Strategy Registry Architecture & Domain Engine Imports
+from engines import REGISTRY
+from diep_engine import ToxicophoreMatchException
+from tox_engine import generate_enterprise_pdf
+from engines.fsanz_engine import build_factory_spec_pdf
+
+# =====================================================================
+# 1. STREAMLIT UI CONFIGURATION & DOMAIN REGISTRY ROUTING
+# =====================================================================
+
+st.set_page_config(
+    page_title="Multi-Domain In-Silico Screener", 
+    layout="wide", 
+    page_icon="🧬"
 )
 
-st.set_page_config(page_title="IATA Computational Screener", layout="wide", page_icon="🧬")
-st.title("In-Silico Cutaneous Bioactivation & Toxicological Screener")
+st.sidebar.title("Domain Engine Registry")
+st.sidebar.markdown("Select computational engine for complete domain isolation:")
 
-col1, col2 = st.columns([1, 3])
+registered_engines = REGISTRY.list_engines()
+engine_options = {f"{e['domain']} → {e['name']}": e['id'] for e in registered_engines}
+
+selected_label = st.sidebar.selectbox("Active Domain Engine:", list(engine_options.keys()))
+active_engine_id = engine_options[selected_label]
+active_engine = REGISTRY.get(active_engine_id)
+
+st.sidebar.markdown("---")
+st.sidebar.info(
+    f"**Active Engine ID:** `{active_engine.engine_id}`\n\n"
+    f"**Domain Category:** `{active_engine.domain_category}`"
+)
+
+st.title(active_engine.engine_name)
+
+# =====================================================================
+# 2. DYNAMIC INPUTS & EXECUTION WORKFLOW
+# =====================================================================
+
+col1, col2 = st.columns([1, 2.5])
 
 with col1:
-    st.subheader("Formulation Inputs")
-    smiles = st.text_input("Target SMILES", "CC(=O)Oc1ccccc1C(=O)O")
-    product_type = st.selectbox("Product Scenario", list(SCCS_MECHANISTIC_REGISTRY.keys()), index=0)
-    conc = st.number_input("Concentration (%)", min_value=0.01, max_value=100.0, value=2.0)
-    
-    st.markdown("#### Toxicological Point of Departure (PoD)")
-    pod = st.number_input("PoD Value (mg/kg/day)", min_value=0.1, max_value=10000.0, value=250.0)
-    
-    pod_col1, pod_col2, pod_col3 = st.columns(3)
-    with pod_col1:
-        pod_type = st.selectbox("PoD Type", ["NOAEL", "LOAEL", "BMDL"], index=0)
-    with pod_col2:
-        species = st.selectbox("Test Species", ["Rat", "Mouse", "Dog", "Rabbit", "Human"], index=0)
-    with pod_col3:
-        duration = st.selectbox("Study Duration", ["Chronic", "Subchronic", "Subacute"], index=1)
-    
-    st.markdown("---")
-    st.markdown("### Deterministic Biophysics (DIEP-MoS)")
-    use_deterministic_flux = st.checkbox("Enable Fickian Deterministic Flux", value=True)
-    formulation_ph = st.number_input("Formulation pH", min_value=0.0, max_value=14.0, value=5.5)
-    
-    st.markdown("#### Multiprotic Ionization Centers")
-    acid_pkas_str = st.text_input("Acidic pKa values (comma-separated)", "4.2")
-    base_pkas_str = st.text_input("Basic pKa values (comma-separated)", "")
-    
-    da = st.slider("Mean Dermal Absorption (%)", 0.1, 100.0, 50.0, disabled=use_deterministic_flux)
-    bw = st.number_input("Body Weight (kg)", 10.0, 150.0, 60.0)
-    mc_samples = int(st.number_input("Monte Carlo Iterations", min_value=1000, max_value=100000, value=10000, step=1000))
-    
-    with st.expander("Advanced Dempster-Shafer Prior Calibration"):
-        baseline_safe = st.slider("Baseline Safe Prior Mass", 0.1, 0.9, 0.70, 0.05)
-        discount_rate = st.slider("Source Discount Rate", 0.1, 0.9, 0.50, 0.05)
-
-    run = st.button("Run Research Audit", type="primary")
+    inputs = active_engine.render_inputs(st)
+    run = st.button("Run Research Audit", type="primary", use_container_width=True)
 
 with col2:
-    if run and smiles:
-        with st.spinner("Executing decision tree and Monte Carlo simulation..."):
-            acid_pkas = [float(x.strip()) for x in acid_pkas_str.split(",") if x.strip()]
-            base_pkas = [float(x.strip()) for x in base_pkas_str.split(",") if x.strip()]
-            
-            diep_results = None
-            if use_deterministic_flux:
+    if run:
+        with st.spinner("Executing active mathematical domain engine..."):
+            try:
+                results = active_engine.execute(inputs)
+                st.session_state["results"] = results
+                st.session_state["engine_id"] = active_engine.engine_id
+            except ToxicophoreMatchException as e:
+                st.error(f"❌ **CRITICAL FATAL ALERT:** {str(e)}")
+            except Exception as e:
+                st.error(f"❌ **Execution Error:** {str(e)}")
+
+    if "results" in st.session_state and st.session_state.get("engine_id") == active_engine.engine_id:
+        res = st.session_state["results"]
+
+        # -------------------------------------------------------------
+        # DOMAIN 1: CUTANEOUS BIOACTIVATION & TOXICOLOGICAL SCREENER
+        # -------------------------------------------------------------
+        if active_engine.engine_id == "cutaneous_iata_diep":
+            data = res["audit"]
+            diep = res["diep"]
+
+            st.info(f"**Assessment ID:** `{data['assessment_id']}` | **Canonical SMILES:** `{data['canonical_smiles']}`")
+
+            t1, t2, t3 = st.tabs(["Monte Carlo & Decision Tree", "TRACE-Onco Synergy Payload", "Export Audit Ledger"])
+
+            with t1:
+                st.subheader("Systemic Bioavailability & Decision Tree Log")
+
+                if diep:
+                    st.markdown("#### 1. Deterministic Bounds & Cramer Decision Tree (DIEP-MoS)")
+                    st.write(f"**Canonical API Properties:** MW: `{diep['api_mw']:.2f}` g/mol | LogP: `{diep['api_logp']:.2f}`")
+                    st.write(f"**Topological Classification:** `{diep['cramer_class']}`")
+                    st.write(f"**Calculated Unionized Fraction ($f_{{ui}}$):** `{diep['f_ui']:.4f}`")
+                    st.write(f"**Fickian Dermal Absorption (DA%):** `{diep['da_pct_applied']:.2f}%`")
+                    st.write(f"**Max Systemic Exposure Dose (SED):** `{diep['sed_ug_day']:.2f} µg/day` vs TTC Limit `{diep['ttc_limit_ug']:.2f} µg/day`")
+
+                    st.markdown("**Computational Cramer Tree Execution Trail:**")
+                    for step in diep["cramer_tree_log"]:
+                        st.text(f"  └── {step}")
+
+                    if diep['status'] == "FAIL":
+                        st.error("❌ **DETERMINISTIC FAILURE:** Absolute systemic exposure exceeds safe EFSA thresholds.")
+                    else:
+                        st.success("✓ **DETERMINISTIC PASS:** Systemic exposure is within safe limits.")
+
+                st.markdown("#### 2. Probabilistic Exposure (Monte Carlo)")
+                st.write(f"**Median MoS:** `{data['mos']['median_mos']}` | **Failure Prob:** `{data['mos']['failure_probability']*100:.2f}%` against AF target of `{data['mos']['target_af']}`")
+                st.json(data["mos"]["af_breakdown"])
+
+            with t2:
+                st.subheader("TRACE-Onco / VMTB Output Vector")
+                if diep:
+                    st.json({
+                        "patient_hepatic_burden_ratio": diep["hepatic_burden_ratio"],
+                        "oncogenic_risk_index": diep["oncogenic_risk_index"],
+                        "bioavailability_status": diep["status"],
+                        "structural_alerts": [alert for alert in data.get("alerts", [])],
+                        "recommendation": "Integrate ratio directly into decentralized Lifelines Cox-PH model, dynamically weighted against patient baseline De Ritis ratio to account for hepatic stress."
+                    })
+                else:
+                    st.info("Enable Deterministic Biophysics to generate the downstream clinical integration payload.")
+
+            with t3:
+                st.subheader("Generate & Download PDF Ledger")
                 try:
-                    diep_results = run_diep_gatekeeper(smiles, conc, formulation_ph, acid_pkas, base_pkas, product_type)
-                    da = diep_results["da_pct_applied"] 
-                except ToxicophoreMatchException as e:
-                    st.error(f"❌ **CRITICAL FATAL ALERT:** {str(e)}")
-                    st.stop()
+                    pdf_bytes = generate_enterprise_pdf(data, diep).getvalue()
+                    st.download_button(
+                        "📥 Download Multi-Section Computational Assessment Dossier (PDF)",
+                        data=pdf_bytes,
+                        file_name=f"{data['assessment_id']}.pdf",
+                        mime="application/pdf",
+                        type="primary"
+                    )
                 except Exception as e:
-                    st.error(f"❌ **Biophysical Calculation Error:** {str(e)}")
-                    st.stop()
+                    st.error(f"PDF Generation Error: {str(e)}")
 
-            res = execute_full_compound_audit(
-                smiles=smiles,
-                product_type=product_type,
-                concentration_pct=conc,
-                pod_noael_mg_kg_day=pod,
-                pod_type=pod_type,
-                species=species,
-                duration=duration,
-                dermal_absorption_pct=da, 
-                body_weight_kg=bw,
-                mc_samples=mc_samples,
-                baseline_safe_belief=baseline_safe,
-                structural_discount_rate=discount_rate
-            )
-            
-            if not res.get("valid", False): 
-                st.error(f"Audit Execution Failed: {res.get('error')}")
-            else: 
-                st.session_state["audit"] = res
-                st.session_state["diep"] = diep_results
-
-if "audit" in st.session_state:
-    data = st.session_state["audit"]
-    diep = st.session_state.get("diep")
-    
-    st.info(f"**Assessment ID:** `{data['assessment_id']}` | **Canonical SMILES:** `{data['canonical_smiles']}`")
-    
-    t1, t2, t3 = st.tabs(["Monte Carlo & Decision Tree", "TRACE-Onco Synergy Payload", "Export Audit Ledger"])
-    
-    with t1:
-        st.subheader("Systemic Bioavailability & Decision Tree Log")
-        
-        if diep:
-            st.markdown("#### 1. Deterministic Bounds & Cramer Decision Tree (DIEP-MoS)")
-            st.write(f"**Canonical API Properties:** MW: `{diep['api_mw']:.2f}` g/mol | LogP: `{diep['api_logp']:.2f}`")
-            st.write(f"**Topological Classification:** `{diep['cramer_class']}`")
-            st.write(f"**Calculated Unionized Fraction ($f_{{ui}}$):** `{diep['f_ui']:.4f}`")
-            st.write(f"**Fickian Dermal Absorption (DA%):** `{diep['da_pct_applied']:.2f}%`")
-            st.write(f"**Max Systemic Exposure Dose (SED):** `{diep['sed_ug_day']:.2f} µg/day` vs TTC Limit `{diep['ttc_limit_ug']:.2f} µg/day`")
-            
-            st.markdown("**Computational Cramer Tree Execution Trail:**")
-            for step in diep["cramer_tree_log"]:
-                st.text(f"  └── {step}")
-
-            if diep['status'] == "FAIL":
-                st.error("❌ **DETERMINISTIC FAILURE:** Absolute systemic exposure exceeds safe EFSA thresholds.")
+        # -------------------------------------------------------------
+        # DOMAIN 2: FSANZ STANDARD 2.9.4 SPORTS DRINK ENGINE
+        # -------------------------------------------------------------
+        elif active_engine.engine_id == "fsanz_294_sports_drink":
+            if "PASS" in res["overall_status"]:
+                st.success(f"✓ **FSANZ 2.9.4 COMPLIANCE VERDICT:** {res['overall_status']}")
+            elif "WARNING" in res["overall_status"]:
+                st.warning(f"⚠️ **FSANZ 2.9.4 COMPLIANCE VERDICT:** {res['overall_status']}")
             else:
-                st.success("✓ **DETERMINISTIC PASS:** Systemic exposure is within safe limits.")
-        
-        st.markdown("#### 2. Probabilistic Exposure (Monte Carlo)")
-        st.write(f"**Median MoS:** `{data['mos']['median_mos']}` | **Failure Prob:** `{data['mos']['failure_probability']*100:.2f}%` against AF target of `{data['mos']['target_af']}`")
-        st.json(data["mos"]["af_breakdown"])
+                st.error(f"❌ **FSANZ 2.9.4 COMPLIANCE VERDICT:** {res['overall_status']}")
 
-    with t2:
-        st.subheader("TRACE-Onco / VMTB Output Vector")
-        if diep:
-            st.json({
-                "patient_hepatic_burden_ratio": diep["hepatic_burden_ratio"],
-                "oncogenic_risk_index": diep["oncogenic_risk_index"],
-                "bioavailability_status": diep["status"],
-                "structural_alerts": [alert for alert in data.get("alerts", [])],
-                "recommendation": "Integrate ratio directly into decentralized Lifelines Cox-PH model, dynamically weighted against patient baseline De Ritis ratio to account for hepatic stress."
-            })
-        else:
-            st.info("Enable Deterministic Biophysics to generate the downstream clinical integration payload.")
-            
-    with t3:
-        st.subheader("Generate & Download PDF Ledger")
-        try:
-            pdf_bytes = generate_enterprise_pdf(data, diep).getvalue()
-            st.download_button(
-                "📥 Download Multi-Section Computational Assessment Dossier (PDF)", 
-                data=pdf_bytes, 
-                file_name=f"{data['assessment_id']}.pdf", 
-                mime="application/pdf",
-                type="primary"
-            )
-        except Exception as e:
-            st.error(f"PDF Generation Error: {str(e)}")
-    
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Calculated Osmolality", f"{res['osmolality_mOsm_kg']} mOsm/kg")
+            m2.metric("Prepared Sodium Concentration", f"{res['sodium_mmol_l']:.2f} mmol/L")
+            m3.metric("Hydration Profile", res["osmo_classification"])
+
+            st.markdown("#### 1. Schedule 29 Active Yield & Dosage Audit Matrix")
+            df_audit = pd.DataFrame(res["audit_table"])
+            st.dataframe(df_audit, use_container_width=True)
+
+            st.markdown("#### 2. Mandatory Package Label Warning Statements")
+            for warning in res["mandatory_warnings"]:
+                st.warning(f"⚠️ **REQUIRED STATEMENT:** {warning}")
+
+            st.markdown("#### 3. Factory Specification PDF Generation")
+            try:
+                pdf_buffer = build_factory_spec_pdf(res)
+                st.download_button(
+                    "📥 Download Factory Specification PDF Dossier",
+                    data=pdf_buffer.getvalue(),
+                    file_name=f"{res['product_name'].replace(' ', '_')}_FSANZ_Spec.pdf",
+                    mime="application/pdf",
+                    type="primary"
+                )
+            except Exception as e:
+                st.error(f"Failed to generate FSANZ PDF specification: {str(e)}")
+                
