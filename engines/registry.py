@@ -10,7 +10,7 @@ class EngineRegistry:
 
     def get(self, engine_id: str) -> BaseComputationalEngine:
         if engine_id not in self._engines:
-            raise KeyError(f"Engine '{engine_id}' is not registered.")
+            raise KeyError(f"Engine '{engine_id}' is not registered in Strategy Registry.")
         return self._engines[engine_id]
 
     def list_engines(self) -> List[Dict[str, str]]:
