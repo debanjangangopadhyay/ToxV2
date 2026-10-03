@@ -4,13 +4,13 @@ Auto-registers computational engines into the central registry.
 """
 
 from engines.registry import EngineRegistry
-from engines.fsanz_engine import FSANZ294Engine
 
 # Central Registry Singleton
 registry = EngineRegistry()
 
 # Register FSANZ 2.9.4 Engine
 try:
+    from engines.fsanz_engine import FSANZ294Engine
     fsanz_instance = FSANZ294Engine()
     registry.register(fsanz_instance)
 except Exception as e:
