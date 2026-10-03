@@ -56,7 +56,7 @@ with col1:
 
 with col2:
     if run and smiles:
-        with st.spinner("Executing biophysical gates and Monte Carlo simulation..."):
+        with st.spinner("Executing decision tree and Monte Carlo simulation..."):
             acid_pkas = [float(x.strip()) for x in acid_pkas_str.split(",") if x.strip()]
             base_pkas = [float(x.strip()) for x in base_pkas_str.split(",") if x.strip()]
             
@@ -99,19 +99,23 @@ if "audit" in st.session_state:
     
     st.info(f"**Assessment ID:** `{data['assessment_id']}` | **Canonical SMILES:** `{data['canonical_smiles']}`")
     
-    t1, t2, t3 = st.tabs(["Monte Carlo & Biophysics", "TRACE-Onco Synergy Payload", "Export Audit Ledger"])
+    t1, t2, t3 = st.tabs(["Monte Carlo & Decision Tree", "TRACE-Onco Synergy Payload", "Export Audit Ledger"])
     
     with t1:
-        st.subheader("Systemic Bioavailability & Simulation Limits")
+        st.subheader("Systemic Bioavailability & Decision Tree Log")
         
         if diep:
-            st.markdown("#### 1. Fickian Deterministic Bounds (DIEP-MoS)")
-            st.write(f"**Canonical API Properties:** MW: `{diep['api_mw']:.2f}` | LogP: `{diep['api_logp']:.2f}`")
-            st.write(f"**Topological Classification:** `{diep['cramer_class']}` ({diep['cramer_rationale']})")
+            st.markdown("#### 1. Deterministic Bounds & Cramer Decision Tree (DIEP-MoS)")
+            st.write(f"**Canonical API Properties:** MW: `{diep['api_mw']:.2f}` g/mol | LogP: `{diep['api_logp']:.2f}`")
+            st.write(f"**Topological Classification:** `{diep['cramer_class']}`")
             st.write(f"**Calculated Unionized Fraction ($f_{{ui}}$):** `{diep['f_ui']:.4f}`")
             st.write(f"**Fickian Dermal Absorption (DA%):** `{diep['da_pct_applied']:.2f}%`")
             st.write(f"**Max Systemic Exposure Dose (SED):** `{diep['sed_ug_day']:.2f} µg/day` vs TTC Limit `{diep['ttc_limit_ug']:.2f} µg/day`")
             
+            st.markdown("**Computational Cramer Tree Execution Trail:**")
+            for step in diep["cramer_tree_log"]:
+                st.text(f"  └── {step}")
+
             if diep['status'] == "FAIL":
                 st.error("❌ **DETERMINISTIC FAILURE:** Absolute systemic exposure exceeds safe EFSA thresholds.")
             else:
@@ -126,6 +130,7 @@ if "audit" in st.session_state:
         if diep:
             st.json({
                 "patient_hepatic_burden_ratio": diep["hepatic_burden_ratio"],
+                "oncogenic_risk_index": diep["oncogenic_risk_index"],
                 "bioavailability_status": diep["status"],
                 "structural_alerts": [alert for alert in data.get("alerts", [])],
                 "recommendation": "Integrate ratio directly into decentralized Lifelines Cox-PH model, dynamically weighted against patient baseline De Ritis ratio to account for hepatic stress."
@@ -136,9 +141,9 @@ if "audit" in st.session_state:
     with t3:
         st.subheader("Generate & Download PDF Ledger")
         try:
-            pdf_bytes = generate_enterprise_pdf(data).getvalue()
+            pdf_bytes = generate_enterprise_pdf(data, diep).getvalue()
             st.download_button(
-                "📥 Download IATA-Aligned Computational Assessment (PDF)", 
+                "📥 Download Multi-Section Computational Assessment Dossier (PDF)", 
                 data=pdf_bytes, 
                 file_name=f"{data['assessment_id']}.pdf", 
                 mime="application/pdf",
@@ -146,4 +151,4 @@ if "audit" in st.session_state:
             )
         except Exception as e:
             st.error(f"PDF Generation Error: {str(e)}")
-                             
+    
