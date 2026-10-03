@@ -66,9 +66,10 @@ class CutaneousEngineAdapter(BaseComputationalEngine):
         bw = st_ctx.sidebar.number_input("Body Weight (kg)", 10.0, 150.0, 60.0)
         mc_samples = int(st_ctx.sidebar.number_input("Monte Carlo Iterations", min_value=1000, max_value=100000, value=10000, step=1000))
 
+        # Nested directly inside the expander context
         with st_ctx.sidebar.expander("Advanced Dempster-Shafer Prior Calibration"):
-            baseline_safe = st_ctx.sidebar.slider("Baseline Safe Prior Mass", 0.1, 0.9, 0.70, 0.05)
-            discount_rate = st_ctx.sidebar.slider("Source Discount Rate", 0.1, 0.9, 0.50, 0.05)
+            baseline_safe = st_ctx.slider("Baseline Safe Prior Mass", 0.1, 0.9, 0.70, 0.05)
+            discount_rate = st_ctx.slider("Source Discount Rate", 0.1, 0.9, 0.50, 0.05)
 
         return {
             "smiles": smiles,
@@ -87,7 +88,8 @@ class CutaneousEngineAdapter(BaseComputationalEngine):
             "mc_samples": mc_samples,
             "baseline_safe": baseline_safe,
             "discount_rate": discount_rate
-        }
+    }
+        
 
     def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Executes the dual DIEP biophysics gatekeeper and full compound audit."""
