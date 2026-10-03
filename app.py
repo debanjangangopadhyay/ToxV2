@@ -220,61 +220,73 @@ if "results" in st.session_state and st.session_state.get("engine_id") == engine
             except Exception as e:
                 st.error(f"PDF Generation Error: {str(e)}")
 
-    # -------------------------------------------------------------
-    # DOMAIN 2: FSANZ STANDARD 2.9.4 SPORTS DRINK ENGINE
-    # -------------------------------------------------------------
-    elif engine_id_str in ["fsanz_294_sports_drink", "fsanz_engine"]:
-        overall_status = res.get("overall_status", "PASS" if res.get("is_compliant", True) or res.get("status") == "PASS" else "FAIL")
-        osmolality = res.get("osmolality_mOsm_kg", 0.0)
-        sodium_mmol = res.get("sodium_mmol_l", res.get("na_mmol_l", 0.0))
-        osmo_class = res.get("osmo_classification", res.get("tonicity_classification", "Isotonic"))
+        # -------------------------------------------------------------
+        # DOMAIN 2: FSANZ STANDARD 2.9.4 SPORTS DRINK ENGINE
+        # -------------------------------------------------------------
+        elif engine_id_str in ["fsanz_294_sports_drink", "fsanz_engine"]:
+            overall_status = res.get("overall_status", "PASS" if res.get("is_compliant", True) or res.get("status") == "PASS" else "FAIL")
+            osmolality = res.get("osmolality_mOsm_kg", 0.0)
+            sodium_mmol = res.get("sodium_mmol_l", res.get("na_mmol_l", 0.0))
+            osmo_class = res.get("osmo_classification", res.get("tonicity_classification", "Isotonic"))
 
-        # Stretched full-width compliance banner
-        if "PASS" in overall_status:
-            st.success(f"### ✓ FSANZ 2.9.4 COMPLIANCE VERDICT: {overall_status}")
-        elif "WARNING" in overall_status:
-            st.warning(f"### ⚠️ FSANZ 2.9.4 COMPLIANCE VERDICT: {overall_status}")
-        else:
-            st.error(f"### ❌ FSANZ 2.9.4 COMPLIANCE VERDICT: {overall_status}")
-
-        # Metrics now have full horizontal width to expand cleanly without '82....' truncations
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Calculated Osmolality", f"{osmolality:.1f} mOsm/kg")
-        m2.metric("Prepared Sodium Concentration", f"{sodium_mmol:.2f} mmol/L")
-        m3.metric("Hydration Profile", osmo_class)
-
-        st.markdown("#### 1. Schedule 29 Active Yield & Dosage Audit Matrix")
-        raw_audit_table = res.get("audit_table", res.get("parsed_compounds", []))
-        if raw_audit_table:
-            df_audit = pd.DataFrame(raw_audit_table)
-            st.dataframe(df_audit, use_container_width=True)
-
-        st.markdown("#### 2. Mandatory Package Label Warning Statements")
-        warnings_list = res.get("mandatory_warnings", res.get("audit_logs", []))
-        for warning in warnings_list:
-            if "FAIL" in warning:
-                st.error(f"❌ **NON-COMPLIANCE ALERT:** {warning}")
-            elif "PASS" in warning:
-                st.success(f"✓ **VERIFIED STATEMENT:** {warning}")
+            if "PASS" in overall_status:
+                st.success(f"### ✓ FSANZ 2.9.4 COMPLIANCE VERDICT: {overall_status}")
+            elif "WARNING" in overall_status:
+                st.warning(f"### ⚠️ FSANZ 2.9.4 COMPLIANCE VERDICT: {overall_status}")
             else:
-                st.warning(f"⚠️ **REQUIRED STATEMENT:** {warning}")
+                st.error(f"### ❌ FSANZ 2.9.4 COMPLIANCE VERDICT: {overall_status}")
 
-        st.markdown("#### 3. Factory Specification PDF Generation")
-        try:
-            if "pdf_bytes" in res and isinstance(res["pdf_bytes"], bytes):
-                pdf_bytes = res["pdf_bytes"]
-            else:
-                pdf_buffer = build_factory_spec_pdf(res)
-                pdf_bytes = pdf_buffer.getvalue() if hasattr(pdf_buffer, "getvalue") else pdf_buffer
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Calculated Osmolality", f"{osmolality:.1f} mOsm/kg")
+            m2.metric("Prepared Sodium Concentration", f"{sodium_mmol:.2f} mmol/L")
+            m3.metric("Hydration Profile", osmo_class)
 
-            product_name = res.get("product_name", "FSANZ_Product").replace(" ", "_")
-            st.download_button(
-                "📥 Download Factory Specification PDF Dossier",
-                data=pdf_bytes,
-                file_name=f"{product_name}_FSANZ_Spec.pdf",
-                mime="application/pdf",
-                type="primary"
-            )
-        except Exception as e:
-            st.error(f"Failed to generate FSANZ PDF specification: {str(e)}")
+            st.markdown("#### 1. Schedule 29 Active Yield & Dosage Audit Matrix")
+            raw_audit_table = res.get("audit_table", res.get("parsed_compounds", res.get("compounds", [])))
+            if raw_audit_table:
+                df_audit = pd.DataFrame(raw_audit_table)
+                st.dataframe(df_audit, use_container_width=True)
+
+            st.markdown("#### 2. Mandatory Package Label Warning Statements")
             
+            # Robust key lookup across all possible return dictionary keys
+            warnings_list = (
+                res.get("mandatory_warnings") 
+                or res.get("warnings") 
+                or res.get("audit_logs") 
+                or res.get("label_warnings") 
+                or []
+            )
+
+            if warnings_list:
+                for warning in warnings_list:
+                    if "FAIL" in warning or "NON-COMPLIANT" in warning:
+                        st.error(f"❌ **NON-COMPLIANCE ALERT:** {warning}")
+                    elif "PASS" in warning or "VERIFIED" in warning:
+                        st.success(f"✓ **VERIFIED STATEMENT:** {warning}")
+                    else:
+                        st.warning(f"⚠️ **REQUIRED STATEMENT:** {warning}")
+            else:
+                # Explicit fallback when no warnings are generated
+                st.info("ℹ️ No mandatory label warning statements triggered for this formulation.")
+
+            st.markdown("#### 3. Factory Specification PDF Generation")
+            try:
+                if "pdf_bytes" in res and isinstance(res["pdf_bytes"], bytes):
+                    pdf_bytes = res["pdf_bytes"]
+                else:
+                    pdf_buffer = build_factory_spec_pdf(res)
+                    pdf_bytes = pdf_buffer.getvalue() if hasattr(pdf_buffer, "getvalue") else pdf_buffer
+
+                product_name = res.get("product_name", "FSANZ_Product").replace(" ", "_")
+                st.download_button(
+                    "📥 Download Factory Specification PDF Dossier",
+                    data=pdf_bytes,
+                    file_name=f"{product_name}_FSANZ_Spec.pdf",
+                    mime="application/pdf",
+                    type="primary",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"Failed to generate FSANZ PDF specification: {str(e)}")
+                
