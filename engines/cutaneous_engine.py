@@ -2,7 +2,7 @@ import streamlit as st
 from typing import Dict, Any
 from engines.base_engine import BaseComputationalEngine
 
-# Direct imports from root-level scripts
+# Direct imports from root-level legacy engines
 from tox_engine import execute_full_compound_audit, generate_enterprise_pdf
 from diep_engine import (
     run_diep_gatekeeper,
@@ -91,4 +91,3 @@ class CutaneousBioactivationEngine(BaseComputationalEngine):
         )
 
         return {"audit": audit_res, "diep": diep_results}
-      
