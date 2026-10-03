@@ -142,99 +142,98 @@ if run:
         except Exception as e:
             st.error(f"❌ **Execution Error:** {str(e)}")
 
-# 4. Render Results Dashboard below the builder (Full Page Width)
+# 4. Render Results Dashboard below the builder (Full Page Width)  
 if "results" in st.session_state and st.session_state.get("engine_id") == engine_id_str:
-    res = st.session_state["results"]
-    st.markdown("## 📊 Assessment Results & Compliance Ledger")
+        res = st.session_state["results"]
 
-    # -------------------------------------------------------------
-    # DOMAIN 1: CUTANEOUS BIOACTIVATION & TOXICOLOGICAL SCREENER
-    # -------------------------------------------------------------
-    if engine_id_str in ["cutaneous_iata_diep", "cutaneous_biophysics"]:
-        data = res.get("audit", res)
-        diep = res.get("diep", res if "api_mw" in res else None)
+        # -------------------------------------------------------------
+        # DOMAIN 1: CUTANEOUS BIOACTIVATION & TOXICOLOGICAL SCREENER
+        # -------------------------------------------------------------
+        if engine_id_str in ["cutaneous_iata_diep", "cutaneous_biophysics"]:
+            data = res.get("audit", res)
+            diep = res.get("diep", res if "api_mw" in res else None)
 
-        assessment_id = data.get('assessment_id', 'ASSESSMENT-LOCAL')
-        canonical_smiles = data.get('canonical_smiles', res.get('smiles', 'N/A'))
+            assessment_id = data.get('assessment_id', 'ASSESSMENT-LOCAL')
+            canonical_smiles = data.get('canonical_smiles', res.get('smiles', 'N/A'))
 
-        st.info(f"**Assessment ID:** `{assessment_id}` | **Canonical SMILES:** `{canonical_smiles}`")
+            st.info(f"**Assessment ID:** `{assessment_id}` | **Canonical SMILES:** `{canonical_smiles}`")
 
-        t1, t2, t3 = st.tabs(["Monte Carlo & Decision Tree", "TRACE-Onco Synergy Payload", "Export Audit Ledger"])
+            t1, t2, t3 = st.tabs(["Monte Carlo & Decision Tree", "TRACE-Onco Synergy Payload", "Export Audit Ledger"])
 
-        with t1:
-            st.subheader("Systemic Bioavailability & Decision Tree Log")
+            with t1:
+                st.subheader("Systemic Bioavailability & Decision Tree Log")
 
-            if diep:
-                st.markdown("#### 1. Deterministic Bounds & Cramer Decision Tree (DIEP-MoS)")
-                st.write(f"**Canonical API Properties:** MW: `{diep.get('api_mw', 0.0):.2f}` g/mol | LogP: `{diep.get('api_logp', 0.0):.2f}`")
-                st.write(f"**Topological Classification:** `{diep.get('cramer_class', res.get('cramer_class', 'Class III'))}`")
-                st.write(f"**Calculated Unionized Fraction ($f_{{ui}}$):** `{diep.get('f_ui', 1.0):.4f}`")
-                st.write(f"**Fickian Dermal Absorption (DA%):** `{diep.get('da_pct_applied', 100.0):.2f}%`")
-                st.write(f"**Max Systemic Exposure Dose (SED):** `{diep.get('sed_ug_day', res.get('sed_mg_kg_day', 0.0) * 1000.0):.2f} µg/day` vs TTC Limit `{diep.get('ttc_limit_ug', 1800.0):.2f} µg/day`")
+                if diep:
+                    st.markdown("#### 1. Deterministic Bounds & Cramer Decision Tree (DIEP-MoS)")
+                    st.write(f"**Canonical API Properties:** MW: `{diep.get('api_mw', 0.0):.2f}` g/mol | LogP: `{diep.get('api_logp', 0.0):.2f}`")
+                    st.write(f"**Topological Classification:** `{diep.get('cramer_class', res.get('cramer_class', 'Class III'))}`")
+                    st.write(f"**Calculated Unionized Fraction ($f_{{ui}}$):** `{diep.get('f_ui', 1.0):.4f}`")
+                    st.write(f"**Fickian Dermal Absorption (DA%):** `{diep.get('da_pct_applied', 100.0):.2f}%`")
+                    st.write(f"**Max Systemic Exposure Dose (SED):** `{diep.get('sed_ug_day', res.get('sed_mg_kg_day', 0.0) * 1000.0):.2f} µg/day` vs TTC Limit `{diep.get('ttc_limit_ug', 1800.0):.2f} µg/day`")
 
-                st.markdown("**Computational Cramer Tree Execution Trail:**")
-                cramer_logs = diep.get("cramer_tree_log", res.get("audit_logs", ["Tree execution complete."]))
-                for step in cramer_logs:
-                    st.text(f"  └── {step}")
+                    st.markdown("**Computational Cramer Tree Execution Trail:**")
+                    cramer_logs = diep.get("cramer_tree_log", res.get("audit_logs", ["Tree execution complete."]))
+                    for step in cramer_logs:
+                        st.text(f"  └── {step}")
 
-                status_val = diep.get('status', 'PASS' if res.get('is_compliant', True) else 'FAIL')
-                if status_val == "FAIL":
-                    st.error("❌ **DETERMINISTIC FAILURE:** Absolute systemic exposure exceeds safe EFSA thresholds.")
+                    status_val = diep.get('status', 'PASS' if res.get('is_compliant', True) else 'FAIL')
+                    if status_val == "FAIL":
+                        st.error("❌ **DETERMINISTIC FAILURE:** Absolute systemic exposure exceeds safe EFSA thresholds.")
+                    else:
+                        st.success("✓ **DETERMINISTIC PASS:** Systemic exposure is within safe limits.")
+
+                st.markdown("#### 2. Probabilistic Exposure (Monte Carlo)")
+                mos_data = data.get("mos", {})
+                if isinstance(mos_data, dict):
+                    st.write(f"**Median MoS:** `{mos_data.get('median_mos', res.get('mos', 'N/A'))}` | **Failure Prob:** `{mos_data.get('failure_probability', 0.0)*100:.2f}%` against AF target of `{mos_data.get('target_af', 100)}`")
+                    if "af_breakdown" in mos_data:
+                        st.json(mos_data["af_breakdown"])
                 else:
-                    st.success("✓ **DETERMINISTIC PASS:** Systemic exposure is within safe limits.")
+                    st.write(f"**Margin of Safety (MoS):** `{mos_data}`")
 
-            st.markdown("#### 2. Probabilistic Exposure (Monte Carlo)")
-            mos_data = data.get("mos", {})
-            if isinstance(mos_data, dict):
-                st.write(f"**Median MoS:** `{mos_data.get('median_mos', res.get('mos', 'N/A'))}` | **Failure Prob:** `{mos_data.get('failure_probability', 0.0)*100:.2f}%` against AF target of `{mos_data.get('target_af', 100)}`")
-                if "af_breakdown" in mos_data:
-                    st.json(mos_data["af_breakdown"])
-            else:
-                st.write(f"**Margin of Safety (MoS):** `{mos_data}`")
+            with t2:
+                st.subheader("TRACE-Onco / VMTB Output Vector")
+                if diep:
+                    st.json({
+                        "patient_hepatic_burden_ratio": diep.get("hepatic_burden_ratio", 0.12),
+                        "oncogenic_risk_index": diep.get("oncogenic_risk_index", 0.01),
+                        "bioavailability_status": diep.get("status", "PASS"),
+                        "structural_alerts": [alert for alert in data.get("alerts", [])],
+                        "recommendation": "Integrate ratio directly into decentralized Lifelines Cox-PH model, dynamically weighted against patient baseline De Ritis ratio to account for hepatic stress."
+                    })
+                else:
+                    st.info("Enable Deterministic Biophysics to generate the downstream clinical integration payload.")
 
-        with t2:
-            st.subheader("TRACE-Onco / VMTB Output Vector")
-            if diep:
-                st.json({
-                    "patient_hepatic_burden_ratio": diep.get("hepatic_burden_ratio", 0.12),
-                    "oncogenic_risk_index": diep.get("oncogenic_risk_index", 0.01),
-                    "bioavailability_status": diep.get("status", "PASS"),
-                    "structural_alerts": [alert for alert in data.get("alerts", [])],
-                    "recommendation": "Integrate ratio directly into decentralized Lifelines Cox-PH model, dynamically weighted against patient baseline De Ritis ratio to account for hepatic stress."
-                })
-            else:
-                st.info("Enable Deterministic Biophysics to generate the downstream clinical integration payload.")
+            with t3:
+                st.subheader("Generate & Download PDF Ledger")
+                try:
+                    pdf_buf = generate_enterprise_pdf(data, diep)
+                    pdf_bytes = pdf_buf.getvalue() if hasattr(pdf_buf, "getvalue") else pdf_buf
+                    st.download_button(
+                        "📥 Download Multi-Section Computational Assessment Dossier (PDF)",
+                        data=pdf_bytes,
+                        file_name=f"{assessment_id}.pdf",
+                        mime="application/pdf",
+                        type="primary"
+                    )
+                except Exception as e:
+                    st.error(f"PDF Generation Error: {str(e)}")
 
-        with t3:
-            st.subheader("Generate & Download PDF Ledger")
-            try:
-                pdf_buf = generate_enterprise_pdf(data, diep)
-                pdf_bytes = pdf_buf.getvalue() if hasattr(pdf_buf, "getvalue") else pdf_buf
-                st.download_button(
-                    "📥 Download Multi-Section Computational Assessment Dossier (PDF)",
-                    data=pdf_bytes,
-                    file_name=f"{assessment_id}.pdf",
-                    mime="application/pdf",
-                    type="primary"
-                )
-            except Exception as e:
-                st.error(f"PDF Generation Error: {str(e)}")
-
-     # -------------------------------------------------------------
-     # DOMAIN 2: FSANZ STANDARD 2.9.4 SPORTS DRINK ENGINE
-     # -------------------------------------------------------------
-     elif engine_id_str in ["fsanz_294_sports_drink", "fsanz_engine"]:
+        # -------------------------------------------------------------
+        # DOMAIN 2: FSANZ STANDARD 2.9.4 SPORTS DRINK ENGINE
+        # -------------------------------------------------------------
+        elif engine_id_str in ["fsanz_294_sports_drink", "fsanz_engine"]:
             overall_status = res.get("overall_status", "PASS" if res.get("is_compliant", True) or res.get("status") == "PASS" else "FAIL")
             osmolality = res.get("osmolality_mOsm_kg", 0.0)
             sodium_mmol = res.get("sodium_mmol_l", res.get("na_mmol_l", 0.0))
             osmo_class = res.get("osmo_classification", res.get("tonicity_classification", "Isotonic"))
 
             if "PASS" in overall_status:
-                st.success(f"### ✓ FSANZ 2.9.4 COMPLIANCE VERDICT: {overall_status}")
+                st.success(f"✓ **FSANZ 2.9.4 COMPLIANCE VERDICT:** {overall_status}")
             elif "WARNING" in overall_status:
-                st.warning(f"### ⚠️ FSANZ 2.9.4 COMPLIANCE VERDICT: {overall_status}")
+                st.warning(f"⚠️ **FSANZ 2.9.4 COMPLIANCE VERDICT:** {overall_status}")
             else:
-                st.error(f"### ❌ FSANZ 2.9.4 COMPLIANCE VERDICT: {overall_status}")
+                st.error(f"❌ **FSANZ 2.9.4 COMPLIANCE VERDICT:** {overall_status}")
 
             m1, m2, m3 = st.columns(3)
             m1.metric("Calculated Osmolality", f"{osmolality:.1f} mOsm/kg")
@@ -242,14 +241,12 @@ if "results" in st.session_state and st.session_state.get("engine_id") == engine
             m3.metric("Hydration Profile", osmo_class)
 
             st.markdown("#### 1. Schedule 29 Active Yield & Dosage Audit Matrix")
-            raw_audit_table = res.get("audit_table", res.get("parsed_compounds", res.get("compounds", [])))
+            raw_audit_table = res.get("audit_table", res.get("parsed_compounds", []))
             if raw_audit_table:
                 df_audit = pd.DataFrame(raw_audit_table)
                 st.dataframe(df_audit, use_container_width=True)
 
             st.markdown("#### 2. Mandatory Package Label Warning Statements")
-            
-            # Robust key lookup across all possible return dictionary keys
             warnings_list = (
                 res.get("mandatory_warnings") 
                 or res.get("warnings") 
@@ -260,15 +257,14 @@ if "results" in st.session_state and st.session_state.get("engine_id") == engine
 
             if warnings_list:
                 for warning in warnings_list:
-                    if "FAIL" in warning or "NON-COMPLIANT" in warning:
+                    if "FAIL" in warning:
                         st.error(f"❌ **NON-COMPLIANCE ALERT:** {warning}")
-                    elif "PASS" in warning or "VERIFIED" in warning:
+                    elif "PASS" in warning:
                         st.success(f"✓ **VERIFIED STATEMENT:** {warning}")
                     else:
                         st.warning(f"⚠️ **REQUIRED STATEMENT:** {warning}")
             else:
-                # Explicit fallback when no warnings are generated
-                st.info("ℹ️ No mandatory label warning statements triggered for this formulation.")
+                st.info("ℹ️️ No mandatory label warning statements triggered for this formulation.")
 
             st.markdown("#### 3. Factory Specification PDF Generation")
             try:
