@@ -105,21 +105,35 @@ st.markdown("""
 st.sidebar.image("https://img.icons8.com/color/96/000000/test-tube.png", width=64)
 st.sidebar.markdown("## **Engine Control Hub**")
 
-registered_engines = REGISTRY.list_engines()
+# Robust retrieval and normalization of registered engines to prevent AttributeError
+raw_engines = REGISTRY.list_engines() if hasattr(REGISTRY, "list_engines") else REGISTRY.get_all()
+
+registered_engines = {}
+if isinstance(raw_engines, dict):
+    registered_engines = raw_engines
+elif isinstance(raw_engines, list):
+    for item in raw_engines:
+        if hasattr(item, "get_metadata"):
+            meta = item.get_metadata()
+            registered_engines[meta.get("id", str(item))] = meta
+        elif isinstance(item, dict):
+            registered_engines[item.get("id", str(item))] = item
 
 if not registered_engines:
     st.error("⚠️ No active engines detected in REGISTRY. Please verify engine module initialization.")
     st.stop()
 
-# Format engine selectbox options
-engine_options = {
-    f"{meta['category']} → {meta['name']}": eid
-    for eid, meta in registered_engines.items()
-}
+# Format engine selectbox options safely
+engine_options = {}
+for eid, meta in registered_engines.items():
+    category = meta.get("category", "General") if isinstance(meta, dict) else "General"
+    name = meta.get("name", eid) if isinstance(meta, dict) else eid
+    label = f"{category} → {name}"
+    engine_options[label] = eid
 
 selected_label = st.sidebar.selectbox("Active Computational Engine:", list(engine_options.keys()))
 active_engine_id = engine_options[selected_label]
-active_engine = REGISTRY.get(active_engine_id)
+active_engine = REGISTRY.get(active_engine_id) if hasattr(REGISTRY, "get") else REGISTRY.get_engine(active_engine_id)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### **Engine Metadata**")
@@ -286,7 +300,7 @@ if "results" in st.session_state and st.session_state.get("engine_id") == active
         zip_bytes = build_consolidated_zip(pdf_deliverables)
 
     # 1-Click Master ZIP Package Button
-    product_slug = res.get("product_name", "FSANZ_Formulation").replace(" ", "_")
+    product_slug = str(res.get("product_name", "FSANZ_Formulation")).replace(" ", "_")
     
     st.markdown("<div class='export-box'>", unsafe_allow_html=True)
     st.download_button(
@@ -302,7 +316,6 @@ if "results" in st.session_state and st.session_state.get("engine_id") == active
     st.markdown("#### **Individual Deliverable Reports**")
     
     # Grid Layout for 10 Deliverable Buttons
-    # Map explicit deliverable titles to filenames
     deliverable_titles = [
         ("D1_Regulatory_Compliance_Dossier.pdf", "📄 D1: Statutory Regulatory Compliance Dossier"),
         ("D2_Chemical_Safety_Heavy_Metals_Report.pdf", "📄 D2: Chemical Safety & Heavy Metals Report"),
@@ -331,4 +344,4 @@ if "results" in st.session_state and st.session_state.get("engine_id") == active
                 use_container_width=True,
                 key=f"btn_dl_{idx}"
             )
-
+            
